@@ -1,9 +1,9 @@
 package stats
 
 import (
+	"github.com/rojolang/rojox/proxy"
+	"github.com/rojolang/rojox/utils"
 	"github.com/sirupsen/logrus"
-	"rojox/proxy"
-	"rojox/utils"
 	"time"
 )
 

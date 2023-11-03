@@ -1,4 +1,4 @@
-module rojox
+module github.com/rojolang/rojox
 
 go 1.21
 

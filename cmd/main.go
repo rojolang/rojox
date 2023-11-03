@@ -4,13 +4,13 @@ import (
 	"context"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/rojolang/rojox/proxy"
+	"github.com/rojolang/rojox/stats"
+	"github.com/rojolang/rojox/utils"
 	"github.com/sirupsen/logrus"
 	"net/http"
 	"os"
 	"os/signal"
-	"rojox/proxy"
-	"rojox/stats"
-	"rojox/utils"
 	"syscall"
 )
 
