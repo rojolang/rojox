@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/armon/go-socks5"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rojolang/rojox/proxy"
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/mem"
 	"github.com/sirupsen/logrus"
@@ -14,7 +15,6 @@ import (
 	"os"
 )
 
-// CheckIPType checks the type of the IP address (IPv4 or IPv6)
 func CheckIPType(ip string) string {
 	parsedIP := net.ParseIP(ip)
 	if parsedIP == nil {
@@ -29,27 +29,6 @@ func CheckIPType(ip string) string {
 	return "Unknown"
 }
 
-// loggingListener defines a listener that logs each accepted connection
-type loggingListener struct {
-	net.Listener
-}
-
-func (ll *loggingListener) Accept() (net.Conn, error) {
-	conn, err := ll.Listener.Accept()
-	if err != nil {
-		logrus.Error("Failed to accept connection: ", err)
-		return nil, err
-	}
-
-	logrus.WithFields(logrus.Fields{
-		"event": "connection_accept",
-		"addr":  conn.RemoteAddr().String(),
-	}).Info("Accepted new connection")
-
-	return conn, nil
-}
-
-// SetupSocks5Server sets up SOCKS5 server and return reference to it
 func SetupSocks5Server() (*socks5.Server, error) {
 	conf := &socks5.Config{}
 	socksServer, err := socks5.New(conf)
@@ -60,7 +39,6 @@ func SetupSocks5Server() (*socks5.Server, error) {
 	return socksServer, nil
 }
 
-// GetEth0IP gets the IP address of the eth0 interface
 func GetEth0IP() (net.IP, error) {
 	iface, err := net.InterfaceByName("eth0")
 	if err != nil {
@@ -81,7 +59,7 @@ func GetEth0IP() (net.IP, error) {
 }
 
 // ListenForConnections starts a goroutine to listen for incoming connections
-func ListenForConnections(socksServer *socks5.Server, eth0IP net.IP) {
+func ListenForConnections(socksServer *socks5.Server, eth0IP net.IP, pool *proxy.ConnectionPool) {
 	go func() {
 		address := fmt.Sprintf("%s:1080", eth0IP.String())
 		logrus.Info("Listening for incoming connections on ", address)
@@ -90,24 +68,29 @@ func ListenForConnections(socksServer *socks5.Server, eth0IP net.IP) {
 			logrus.Error("Failed to listen on address: ", err)
 			return
 		}
-		if err := socksServer.Serve(&loggingListener{listener}); err != nil {
-			logrus.Error("Failed to serve SOCKS5 server: ", err)
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				logrus.Error("Failed to accept connection: ", err)
+				return
+			}
+			logrus.WithFields(logrus.Fields{
+				"event": "connection_accept",
+				"addr":  conn.RemoteAddr().String(),
+			}).Info("Accepted new connection")
+			pool.Add(conn)
+			go func() {
+				if err := socksServer.ServeConn(conn); err != nil {
+					logrus.Error("Failed to serve connection: ", err)
+					// Here you might also want to remove the connection from the pool
+					// and close it, depending on your requirements
+				}
+			}()
 		}
 	}()
 }
 
-// SetupHTTPServer sets up HTTP server for metrics and return reference to it
 func SetupHTTPServer() (*http.Server, error) {
-	// Expose metrics over HTTPS
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		_, err := fmt.Fprintln(w, "Welcome to the server!")
-		if err != nil {
-			http.Error(w, "Failed to write response", http.StatusInternalServerError)
-			logrus.Error("Failed to write response: ", err)
-		}
-	})
-	http.Handle("/metrics", promhttp.Handler())
-
 	// Check if TLS certificates exist
 	_, err := os.Stat("cert.pem")
 	if err != nil {
@@ -127,8 +110,16 @@ func SetupHTTPServer() (*http.Server, error) {
 	return httpServer, nil
 }
 
-// StartHTTPServer starts HTTP server
 func StartHTTPServer(httpServer *http.Server) error {
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		_, err := fmt.Fprintln(w, "Welcome to the server!")
+		if err != nil {
+			http.Error(w, "Failed to write response", http.StatusInternalServerError)
+			logrus.Error("Failed to write response: ", err)
+		}
+	})
+	http.Handle("/metrics", promhttp.Handler())
+
 	if err := httpServer.ListenAndServeTLS("cert.pem", "key.pem"); err != nil {
 		logrus.Error("Failed to start HTTP server: ", err)
 		return err
@@ -136,20 +127,13 @@ func StartHTTPServer(httpServer *http.Server) error {
 	return nil
 }
 
-// GetPublicIP returns the public IP of the machine
 func GetPublicIP() (string, error) {
 	resp, err := http.Get("https://api.ipify.org")
 	if err != nil {
 		logrus.Error("Failed to get public IP: ", err)
 		return "", err
 	}
-
-	defer func() {
-		cerr := resp.Body.Close()
-		if cerr != nil {
-			logrus.Error("Failed to close response body: ", cerr)
-		}
-	}()
+	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -160,7 +144,6 @@ func GetPublicIP() (string, error) {
 	return string(body), nil
 }
 
-// GetIPv6 returns the IPv6 of the eth0 network interface
 func GetIPv6() (string, error) {
 	iface, err := net.InterfaceByName("eth0")
 	if err != nil {
@@ -188,7 +171,6 @@ func GetIPv6() (string, error) {
 	return "", fmt.Errorf("IPv6 address not found for eth0")
 }
 
-// GetCurrentCPUUsage returns the current CPU usage
 func GetCurrentCPUUsage() (float64, error) {
 	cpuPercent, err := cpu.Percent(0, false)
 	if err != nil {
@@ -198,7 +180,6 @@ func GetCurrentCPUUsage() (float64, error) {
 	return cpuPercent[0], nil
 }
 
-// GetCurrentMemoryUsage returns the current memory usage
 func GetCurrentMemoryUsage() (float64, error) {
 	memStat, err := mem.VirtualMemory()
 	if err != nil {

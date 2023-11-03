@@ -52,7 +52,7 @@ func main() {
 	}
 
 	// Start a goroutine to listen for incoming connections
-	go utils.ListenForConnections(socksServer, eth0IP)
+	go utils.ListenForConnections(socksServer, eth0IP, pool)
 
 	// Set up HTTP server
 	httpServer, err := utils.SetupHTTPServer()
