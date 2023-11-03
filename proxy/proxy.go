@@ -10,7 +10,7 @@ import (
 )
 
 type ConnectionPool struct {
-	mu        sync.Mutex
+	mu        sync.RWMutex
 	conns     chan net.Conn
 	maxSize   int
 	waitGroup sync.WaitGroup
@@ -28,23 +28,23 @@ func NewConnectionPool(size int) *ConnectionPool {
 func (p *ConnectionPool) Add(conn net.Conn) {
 	p.mu.Lock()
 	logrus.Debug("Lock acquired in Add")
-	defer p.mu.Unlock()
 	p.conns <- conn
 	p.waitGroup.Add(1)
+	p.mu.Unlock()
 }
 
 func (p *ConnectionPool) Get(ctx context.Context) (net.Conn, error) {
-	p.mu.Lock()
+	p.mu.RLock()
 	logrus.Debug("Lock acquired in Get")
 	if p.closing {
-		p.mu.Unlock()
+		p.mu.RUnlock()
 		return nil, fmt.Errorf("connection pool closing")
 	}
 	if p.closed {
-		p.mu.Unlock()
+		p.mu.RUnlock()
 		return nil, fmt.Errorf("connection pool closed")
 	}
-	p.mu.Unlock()
+	p.mu.RUnlock()
 
 	select {
 	case conn := <-p.conns:
@@ -55,13 +55,17 @@ func (p *ConnectionPool) Get(ctx context.Context) (net.Conn, error) {
 }
 
 func (p *ConnectionPool) GetTotalConnections() int {
-	p.mu.Lock()
+	p.mu.RLock()
 	logrus.Debug("Lock acquired in GetTotalConnections")
-	defer p.mu.Unlock()
 	if p == nil {
+		p.mu.RUnlock()
+		logrus.Debug("ConnectionPool is nil in GetTotalConnections")
 		return 0
 	}
-	return len(p.conns)
+	totalConnections := len(p.conns)
+	logrus.Debug("Total connections: ", totalConnections)
+	p.mu.RUnlock()
+	return totalConnections
 }
 
 func (p *ConnectionPool) Close() {
@@ -83,10 +87,10 @@ func (p *ConnectionPool) Close() {
 
 func (p *ConnectionPool) AutoScale() {
 	for {
-		p.mu.Lock()
+		p.mu.RLock()
 		logrus.Debug("Lock acquired in AutoScale")
 		size := len(p.conns)
-		p.mu.Unlock()
+		p.mu.RUnlock()
 
 		if size < p.maxSize/2 {
 			p.mu.Lock()
