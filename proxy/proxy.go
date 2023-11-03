@@ -6,17 +6,21 @@ import (
 	"github.com/sirupsen/logrus"
 	"net"
 	"sync/atomic"
+	"time"
 )
 
 type ConnectionManager struct {
-	totalRequests    int64 // Total number of requests made.
-	totalFailed      int64 // Total number of failed connection attempts.
-	totalConnections int64 // Total number of accepted connections.
+	totalRequests    int64     // Total number of requests made.
+	totalFailed      int64     // Total number of failed connection attempts.
+	totalConnections int64     // Total number of accepted connections.
+	startTime        time.Time // The time when the ConnectionManager was created.
 }
 
 // NewConnectionManager creates a new connection manager.
 func NewConnectionManager() *ConnectionManager {
-	return &ConnectionManager{}
+	return &ConnectionManager{
+		startTime: time.Now(),
+	}
 }
 
 // Connect creates a new connection.
@@ -59,6 +63,11 @@ func (m *ConnectionManager) AcceptConnection() {
 // GetTotalConnections returns the total number of accepted connections.
 func (m *ConnectionManager) GetTotalConnections() int64 {
 	return atomic.LoadInt64(&m.totalConnections)
+}
+
+// GetUptime returns the time duration since the ConnectionManager was created.
+func (m *ConnectionManager) GetUptime() time.Duration {
+	return time.Since(m.startTime)
 }
 
 // Close closes a connection.

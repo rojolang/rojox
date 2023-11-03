@@ -26,6 +26,7 @@ func PrintStats(manager *proxy.ConnectionManager) {
 			serverStats["total_requests"] = manager.GetTotalRequests()
 			serverStats["total_failed"] = manager.GetTotalFailed()
 			serverStats["total_connections"] = manager.GetTotalConnections()
+			serverStats["uptime"] = manager.GetUptime().String()
 			logrus.WithFields(serverStats).Info("Server stats")
 		}()
 	}
