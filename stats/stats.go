@@ -12,41 +12,34 @@ func PrintStats(pool *proxy.ConnectionPool) {
 	for {
 		time.Sleep(5 * time.Second)
 
-		// Get public IP
-		publicIP, err := utils.GetPublicIP()
-		if err != nil {
-			logrus.Error("Unable to get public IP: ", err)
-			continue
-		}
+		serverStats := logrus.Fields{}
 
-		// Determine IP type
-		ipType := utils.CheckIPType(publicIP)
+		// Get and log server stats
+		serverStats["public_ip"], _ = getAndLogStat("public IP", utils.GetPublicIP)
+		serverStats["ip_type"] = utils.CheckIPType(serverStats["public_ip"].(string))
+		serverStats["ipv6_ip"], _ = getAndLogStat("IPv6", utils.GetIPv6)
+		serverStats["current_cpu_usage"], _ = getAndLogStatFloat("current CPU usage", utils.GetCurrentCPUUsage)
+		serverStats["current_mem_usage"], _ = getAndLogStatFloat("current memory usage", utils.GetCurrentMemoryUsage)
+		serverStats["total_connections"] = pool.GetTotalConnections()
 
-		// Get IPv6
-		ipv6, err := utils.GetIPv6()
-		if err != nil {
-			logrus.Error("Unable to get IPv6: ", err)
-		}
-
-		// Get current CPU usage
-		cpuUsage, err := utils.GetCurrentCPUUsage()
-		if err != nil {
-			logrus.Error("Unable to get current CPU usage: ", err)
-		}
-
-		// Get current memory usage
-		memoryUsage, err := utils.GetCurrentMemoryUsage()
-		if err != nil {
-			logrus.Error("Unable to get current memory usage: ", err)
-		}
-
-		logrus.WithFields(logrus.Fields{
-			"total_connections": pool.GetTotalConnections(),
-			"public_ip":         publicIP,
-			"ip_type":           ipType,
-			"ipv6_ip":           ipv6,
-			"current_cpu_usage": cpuUsage,
-			"current_mem_usage": memoryUsage,
-		}).Info("Server stats")
+		logrus.WithFields(serverStats).Info("Server stats")
 	}
+}
+
+// getAndLogStat gets a server stat using the provided function and logs an error if one occurs
+func getAndLogStat(statName string, statFunc func() (string, error)) (string, error) {
+	stat, err := statFunc()
+	if err != nil {
+		logrus.Error("Unable to get ", statName, ": ", err)
+	}
+	return stat, err
+}
+
+// getAndLogStatFloat gets a server stat using the provided function and logs an error if one occurs
+func getAndLogStatFloat(statName string, statFunc func() (float64, error)) (float64, error) {
+	stat, err := statFunc()
+	if err != nil {
+		logrus.Error("Unable to get ", statName, ": ", err)
+	}
+	return stat, err
 }

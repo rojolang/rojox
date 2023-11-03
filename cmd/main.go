@@ -32,26 +32,37 @@ var (
 
 func main() {
 	// Set up SOCKS5 server
-	socksServer := utils.SetupSocks5Server()
+	socksServer, err := utils.SetupSocks5Server()
+	if err != nil {
+		logrus.Fatalf("Failed to set up SOCKS5 server: %v", err)
+	}
 
 	// Create a connection pool
 	pool := proxy.NewConnectionPool(10)
 	go pool.AutoScale()
 
 	// Get the IP address of the eth0 interface
-	eth0IP := utils.GetEth0IP()
+	eth0IP, err := utils.GetEth0IP()
+	if err != nil {
+		logrus.Fatalf("Failed to get IP address of eth0: %v", err)
+	}
 
 	// Start a goroutine to listen for incoming connections
 	go utils.ListenForConnections(socksServer, eth0IP)
 
 	// Set up HTTP server
-	httpServer := utils.SetupHTTPServer()
+	httpServer, err := utils.SetupHTTPServer()
+	if err != nil {
+		logrus.Fatalf("Failed to set up HTTP server: %v", err)
+	}
 
 	// Handle termination signals
 	handleTerminationSignals(httpServer, pool)
 
 	// Start HTTP server
-	utils.StartHTTPServer(httpServer)
+	if err := utils.StartHTTPServer(httpServer); err != nil {
+		logrus.Fatalf("Failed to start HTTP server: %v", err)
+	}
 
 	// Start a goroutine to print stats every 5 seconds
 	go stats.PrintStats(pool)
@@ -62,7 +73,9 @@ func main() {
 	<-quit
 
 	// Stop accepting new connections
-	httpServer.Shutdown(context.Background())
+	if err := httpServer.Shutdown(context.Background()); err != nil {
+		logrus.Errorf("Failed to shutdown HTTP server: %v", err)
+	}
 
 	// Close all existing connections
 	pool.Close()
@@ -80,7 +93,7 @@ func handleTerminationSignals(httpServer *http.Server, pool *proxy.ConnectionPoo
 
 		// Stop accepting new connections
 		if err := httpServer.Shutdown(context.Background()); err != nil {
-			logrus.Fatal(err)
+			logrus.Errorf("Failed to shutdown HTTP server: %v", err)
 		}
 
 		// Close all existing connections

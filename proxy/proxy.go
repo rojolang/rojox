@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"fmt"
+	"github.com/sirupsen/logrus"
 	"net"
 	"sync"
 	"time"
@@ -66,7 +67,9 @@ func (p *ConnectionPool) Close() {
 	p.closing = true
 	close(p.conns)
 	for conn := range p.conns {
-		conn.Close()
+		if err := conn.Close(); err != nil {
+			logrus.Error("Failed to close connection: ", err)
+		}
 	}
 	p.closed = true
 }
