@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/rojolang/rojox/proxy"
 	"github.com/rojolang/rojox/stats"
 	"github.com/rojolang/rojox/utils"
@@ -12,18 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-)
-
-var (
-	// Define metrics for active and idle connections
-	activeConnections = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "active_connections",
-		Help: "Number of active connections",
-	})
-	logEntries = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "log_entries_total",
-		Help: "Total number of log entries",
-	})
 )
 
 func main() {

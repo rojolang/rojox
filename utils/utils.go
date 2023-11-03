@@ -61,7 +61,6 @@ func GetEth0IP() (net.IP, error) {
 	return eth0IP, nil
 }
 
-// ListenForConnections starts a goroutine to listen for incoming connections
 func ListenForConnections(socksServer *socks5.Server, eth0IP net.IP, manager *proxy.ConnectionManager) {
 	go func() {
 		address := fmt.Sprintf("%s:1080", eth0IP.String())
@@ -71,6 +70,8 @@ func ListenForConnections(socksServer *socks5.Server, eth0IP net.IP, manager *pr
 			logrus.Error("Failed to listen on address: ", err)
 			return
 		}
+		defer listener.Close() // Ensure the listener is closed when the function returns
+
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
@@ -78,20 +79,24 @@ func ListenForConnections(socksServer *socks5.Server, eth0IP net.IP, manager *pr
 				return
 			}
 			logrus.WithFields(logrus.Fields{
-				"event": "connection_accept",
-				"addr":  conn.RemoteAddr().String(),
+				"event":       "connection_accept",
+				"local_addr":  conn.LocalAddr().String(),
+				"remote_addr": conn.RemoteAddr().String(),
 			}).Info("Accepted new connection")
 
 			go func() {
+				defer conn.Close() // Ensure the connection is closed when the goroutine exits
 				if err := socksServer.ServeConn(conn); err != nil {
-					logrus.Error("Failed to serve connection: ", err)
+					logrus.WithFields(logrus.Fields{
+						"event":       "serve_connection_error",
+						"local_addr":  conn.LocalAddr().String(),
+						"remote_addr": conn.RemoteAddr().String(),
+					}).Error("Failed to serve connection: ", err)
 				}
-				manager.Close(conn)
 			}()
 		}
 	}()
 }
-
 func SetupHTTPServer() (*http.Server, error) {
 	// Check if TLS certificates exist
 	_, err := os.Stat("cert.pem")

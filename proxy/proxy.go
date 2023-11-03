@@ -23,8 +23,17 @@ func (m *ConnectionManager) Connect(ctx context.Context, network, address string
 
 	conn, err := net.Dial(network, address)
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"network": network,
+			"address": address,
+		}).Errorf("Failed to create connection: %v", err)
 		return nil, fmt.Errorf("failed to create connection: %w", err)
 	}
+
+	logrus.WithFields(logrus.Fields{
+		"network": network,
+		"address": address,
+	}).Info("Successfully created connection")
 
 	return conn, nil
 }
@@ -37,6 +46,8 @@ func (m *ConnectionManager) GetTotalRequests() int64 {
 // Close closes a connection.
 func (m *ConnectionManager) Close(conn net.Conn) {
 	if err := conn.Close(); err != nil {
-		logrus.Error("Failed to close connection: ", err)
+		logrus.WithField("address", conn.RemoteAddr().String()).Errorf("Failed to close connection: %v", err)
+	} else {
+		logrus.WithField("address", conn.RemoteAddr().String()).Info("Successfully closed connection")
 	}
 }
