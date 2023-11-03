@@ -91,8 +91,6 @@ func main() {
 
 	// Close all existing connections
 	pool.Close()
-
-	os.Exit(0)
 }
 
 func handleTerminationSignals(httpServer *http.Server, pool *proxy.ConnectionPool) {
@@ -110,7 +108,5 @@ func handleTerminationSignals(httpServer *http.Server, pool *proxy.ConnectionPoo
 
 		// Close all existing connections
 		pool.Close()
-
-		os.Exit(0)
 	}()
 }

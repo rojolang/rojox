@@ -6,6 +6,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -15,10 +16,10 @@ type ConnectionPool struct {
 	conns           chan net.Conn // Pool of network connections.
 	maxSize         int           // Maximum size of the pool.
 	waitGroup       sync.WaitGroup
-	closing         bool // Indicates if the pool is closing.
-	closed          bool // Indicates if the pool is closed.
-	totalRequests   int  // Total number of requests made.
-	idleConnections int  // Number of idle connections in the pool.
+	closing         bool  // Indicates if the pool is closing.
+	closed          bool  // Indicates if the pool is closed.
+	totalRequests   int32 // Total number of requests made.
+	idleConnections int32 // Number of idle connections in the pool.
 }
 
 // NewConnectionPool creates a new connection pool with the given size.
@@ -35,7 +36,7 @@ func (p *ConnectionPool) Add(conn net.Conn) {
 	defer p.mu.Unlock()
 	p.conns <- conn
 	p.waitGroup.Add(1)
-	p.idleConnections++
+	atomic.AddInt32(&p.idleConnections, 1)
 }
 
 // Get retrieves a connection from the pool.
@@ -49,8 +50,8 @@ func (p *ConnectionPool) Get(ctx context.Context) (net.Conn, error) {
 		p.mu.Unlock()
 		return nil, fmt.Errorf("connection pool closed")
 	}
-	p.totalRequests++
-	p.idleConnections--
+	atomic.AddInt32(&p.totalRequests, 1)
+	atomic.AddInt32(&p.idleConnections, -1)
 	p.mu.Unlock()
 
 	select {
@@ -70,16 +71,12 @@ func (p *ConnectionPool) GetTotalConnections() int {
 
 // GetTotalRequests returns the total number of requests made.
 func (p *ConnectionPool) GetTotalRequests() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.totalRequests
+	return int(atomic.LoadInt32(&p.totalRequests))
 }
 
 // GetIdleConnections returns the number of idle connections in the pool.
 func (p *ConnectionPool) GetIdleConnections() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.idleConnections
+	return int(atomic.LoadInt32(&p.idleConnections))
 }
 
 // Close closes all connections in the pool.

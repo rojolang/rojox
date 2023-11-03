@@ -8,13 +8,12 @@ import (
 )
 
 // PrintStats prints stats every 5 seconds
-// PrintStats prints stats every 5 seconds
-// PrintStats prints stats every 5 seconds
 func PrintStats(pool *proxy.ConnectionPool) {
 	logrus.Info("Starting PrintStats goroutine")
-	for {
-		time.Sleep(5 * time.Second)
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
 
+	for range ticker.C {
 		serverStats := logrus.Fields{}
 
 		// Get and log server stats

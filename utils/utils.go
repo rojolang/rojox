@@ -15,6 +15,7 @@ import (
 	"os"
 )
 
+// CheckIPType checks the type of the given IP address.
 func CheckIPType(ip string) string {
 	parsedIP := net.ParseIP(ip)
 	if parsedIP == nil {
@@ -29,6 +30,7 @@ func CheckIPType(ip string) string {
 	return "Unknown"
 }
 
+// SetupSocks5Server sets up a new SOCKS5 server.
 func SetupSocks5Server() (*socks5.Server, error) {
 	conf := &socks5.Config{}
 	socksServer, err := socks5.New(conf)
@@ -39,6 +41,7 @@ func SetupSocks5Server() (*socks5.Server, error) {
 	return socksServer, nil
 }
 
+// GetEth0IP gets the IP address for the eth0 network interface.
 func GetEth0IP() (net.IP, error) {
 	iface, err := net.InterfaceByName("eth0")
 	if err != nil {
@@ -82,8 +85,6 @@ func ListenForConnections(socksServer *socks5.Server, eth0IP net.IP, pool *proxy
 			go func() {
 				if err := socksServer.ServeConn(conn); err != nil {
 					logrus.Error("Failed to serve connection: ", err)
-					// Here you might also want to remove the connection from the pool
-					// and close it, depending on your requirements
 				}
 			}()
 		}
@@ -110,6 +111,7 @@ func SetupHTTPServer() (*http.Server, error) {
 	return httpServer, nil
 }
 
+// StartHTTPServer starts the given HTTP server.
 func StartHTTPServer(httpServer *http.Server) error {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		_, err := fmt.Fprintln(w, "Welcome to the server!")
@@ -127,6 +129,7 @@ func StartHTTPServer(httpServer *http.Server) error {
 	return nil
 }
 
+// GetPublicIP gets the public IP address of the server.
 func GetPublicIP() (string, error) {
 	resp, err := http.Get("https://api.ipify.org")
 	if err != nil {
@@ -144,6 +147,7 @@ func GetPublicIP() (string, error) {
 	return string(body), nil
 }
 
+// GetIPv6 gets the IPv6 address for the eth0 network interface.
 func GetIPv6() (string, error) {
 	iface, err := net.InterfaceByName("eth0")
 	if err != nil {
@@ -171,6 +175,7 @@ func GetIPv6() (string, error) {
 	return "", fmt.Errorf("IPv6 address not found for eth0")
 }
 
+// GetCurrentCPUUsage gets the current CPU usage.
 func GetCurrentCPUUsage() (float64, error) {
 	cpuPercent, err := cpu.Percent(0, false)
 	if err != nil {
@@ -180,6 +185,7 @@ func GetCurrentCPUUsage() (float64, error) {
 	return cpuPercent[0], nil
 }
 
+// GetCurrentMemoryUsage gets the current memory usage.
 func GetCurrentMemoryUsage() (float64, error) {
 	memStat, err := mem.VirtualMemory()
 	if err != nil {
