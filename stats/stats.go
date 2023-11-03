@@ -8,7 +8,8 @@ import (
 )
 
 // PrintStats prints stats every 5 seconds
-func PrintStats(pool *proxy.ConnectionPool) {
+// PrintStats prints stats every 5 seconds
+func PrintStats(manager *proxy.ConnectionManager) {
 	logrus.Info("Starting PrintStats goroutine")
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -30,10 +31,8 @@ func PrintStats(pool *proxy.ConnectionPool) {
 		// Wait for server stats to be fetched
 		<-statsCh
 
-		// Get connection pool stats
-		serverStats["total_connections"] = pool.GetTotalConnections()
-		serverStats["total_requests"] = pool.GetTotalRequests()
-		serverStats["idle_connections"] = pool.GetIdleConnections()
+		// Get connection manager stats
+		serverStats["total_requests"] = manager.GetTotalRequests()
 
 		logrus.WithFields(serverStats).Info("Server stats")
 	}
