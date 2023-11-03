@@ -18,7 +18,7 @@ type ConnectionPool struct {
 	waitGroup       sync.WaitGroup
 	closing         bool  // Indicates if the pool is closing.
 	closed          bool  // Indicates if the pool is closed.
-	totalRequests   int32 // Total number of requests made.
+	totalRequests   int64 // Total number of requests made.
 	idleConnections int32 // Number of idle connections in the pool.
 }
 
@@ -50,7 +50,7 @@ func (p *ConnectionPool) Get(ctx context.Context) (net.Conn, error) {
 		p.mu.Unlock()
 		return nil, fmt.Errorf("connection pool closed")
 	}
-	atomic.AddInt32(&p.totalRequests, 1)
+	atomic.AddInt64(&p.totalRequests, 1)
 	atomic.AddInt32(&p.idleConnections, -1)
 	p.mu.Unlock()
 
@@ -70,8 +70,8 @@ func (p *ConnectionPool) GetTotalConnections() int {
 }
 
 // GetTotalRequests returns the total number of requests made.
-func (p *ConnectionPool) GetTotalRequests() int {
-	return int(atomic.LoadInt32(&p.totalRequests))
+func (p *ConnectionPool) GetTotalRequests() int64 {
+	return atomic.LoadInt64(&p.totalRequests)
 }
 
 // GetIdleConnections returns the number of idle connections in the pool.
