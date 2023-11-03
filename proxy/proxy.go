@@ -9,8 +9,9 @@ import (
 )
 
 type ConnectionManager struct {
-	totalRequests int64 // Total number of requests made.
-	totalFailed   int64 // Total number of failed connection attempts.
+	totalRequests    int64 // Total number of requests made.
+	totalFailed      int64 // Total number of failed connection attempts.
+	totalConnections int64 // Total number of accepted connections.
 }
 
 // NewConnectionManager creates a new connection manager.
@@ -48,6 +49,16 @@ func (m *ConnectionManager) GetTotalRequests() int64 {
 // GetTotalFailed returns the total number of failed connection attempts.
 func (m *ConnectionManager) GetTotalFailed() int64 {
 	return atomic.LoadInt64(&m.totalFailed)
+}
+
+// AcceptConnection increments the totalConnections counter.
+func (m *ConnectionManager) AcceptConnection() {
+	atomic.AddInt64(&m.totalConnections, 1)
+}
+
+// GetTotalConnections returns the total number of accepted connections.
+func (m *ConnectionManager) GetTotalConnections() int64 {
+	return atomic.LoadInt64(&m.totalConnections)
 }
 
 // Close closes a connection.

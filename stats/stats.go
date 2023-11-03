@@ -25,6 +25,7 @@ func PrintStats(manager *proxy.ConnectionManager) {
 			serverStats["current_mem_usage"], _ = getAndLogStatFloat("current memory usage", utils.GetCurrentMemoryUsage)
 			serverStats["total_requests"] = manager.GetTotalRequests()
 			serverStats["total_failed"] = manager.GetTotalFailed()
+			serverStats["total_connections"] = manager.GetTotalConnections()
 			logrus.WithFields(serverStats).Info("Server stats")
 		}()
 	}
