@@ -15,7 +15,6 @@ import (
 )
 
 // CheckIPType checks the type of the IP address (IPv4 or IPv6)
-// CheckIPType checks the type of the IP address (IPv4 or IPv6)
 func CheckIPType(ip string) string {
 	parsedIP := net.ParseIP(ip)
 	if parsedIP == nil {
