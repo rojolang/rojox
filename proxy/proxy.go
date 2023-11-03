@@ -25,13 +25,11 @@ func NewConnectionPool(size int) *ConnectionPool {
 	}
 }
 
-func (p *ConnectionPool) GetTotalConnections() int {
+func (p *ConnectionPool) Add(conn net.Conn) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p == nil {
-		return 0
-	}
-	return len(p.conns)
+	p.conns <- conn
+	p.waitGroup.Add(1)
 }
 
 func (p *ConnectionPool) Get(ctx context.Context) (net.Conn, error) {
@@ -57,6 +55,9 @@ func (p *ConnectionPool) Get(ctx context.Context) (net.Conn, error) {
 func (p *ConnectionPool) GetTotalConnections() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p == nil {
+		return 0
+	}
 	return len(p.conns)
 }
 
