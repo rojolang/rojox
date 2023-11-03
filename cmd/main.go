@@ -31,6 +31,10 @@ var (
 )
 
 func main() {
+	logrus.SetLevel(logrus.InfoLevel)
+	logrus.SetOutput(os.Stdout)
+	logrus.Info("Starting main function")
+
 	// Set up SOCKS5 server
 	socksServer, err := utils.SetupSocks5Server()
 	if err != nil {
@@ -65,6 +69,7 @@ func main() {
 	}
 
 	// Start a goroutine to print stats every 5 seconds
+	logrus.Info("Starting PrintStats goroutine")
 	go stats.PrintStats(pool)
 
 	// Wait for termination signal
