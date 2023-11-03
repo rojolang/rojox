@@ -17,11 +17,18 @@ func PrintStats(pool *proxy.ConnectionPool) {
 		serverStats := logrus.Fields{}
 
 		// Get and log server stats
-		serverStats["public_ip"], _ = getAndLogStat("public IP", utils.GetPublicIP)
-		serverStats["ip_type"] = utils.CheckIPType(serverStats["public_ip"].(string))
-		serverStats["ipv6_ip"], _ = getAndLogStat("IPv6", utils.GetIPv6)
-		serverStats["current_cpu_usage"], _ = getAndLogStatFloat("current CPU usage", utils.GetCurrentCPUUsage)
-		serverStats["current_mem_usage"], _ = getAndLogStatFloat("current memory usage", utils.GetCurrentMemoryUsage)
+		statsCh := make(chan struct{})
+		go func() {
+			defer close(statsCh)
+			serverStats["public_ip"], _ = getAndLogStat("public IP", utils.GetPublicIP)
+			serverStats["ip_type"] = utils.CheckIPType(serverStats["public_ip"].(string))
+			serverStats["ipv6_ip"], _ = getAndLogStat("IPv6", utils.GetIPv6)
+			serverStats["current_cpu_usage"], _ = getAndLogStatFloat("current CPU usage", utils.GetCurrentCPUUsage)
+			serverStats["current_mem_usage"], _ = getAndLogStatFloat("current memory usage", utils.GetCurrentMemoryUsage)
+		}()
+
+		// Wait for server stats to be fetched
+		<-statsCh
 
 		// Get connection pool stats
 		serverStats["total_connections"] = pool.GetTotalConnections()
