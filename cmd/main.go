@@ -65,11 +65,13 @@ func main() {
 	handleTerminationSignals(httpServer, pool)
 	logrus.Info("Termination signals handled")
 
-	// Start HTTP server
+	// Start HTTP server in a separate goroutine
 	logrus.Info("Starting HTTP server")
-	if err := utils.StartHTTPServer(httpServer); err != nil {
-		logrus.Fatalf("Failed to start HTTP server: %v", err)
-	}
+	go func() {
+		if err := utils.StartHTTPServer(httpServer); err != nil {
+			logrus.Fatalf("Failed to start HTTP server: %v", err)
+		}
+	}()
 	logrus.Info("HTTP server started")
 
 	// Start a goroutine to print stats every 5 seconds
