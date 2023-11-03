@@ -27,6 +27,7 @@ func NewConnectionPool(size int) *ConnectionPool {
 
 func (p *ConnectionPool) Add(conn net.Conn) {
 	p.mu.Lock()
+	logrus.Debug("Lock acquired in Add")
 	defer p.mu.Unlock()
 	p.conns <- conn
 	p.waitGroup.Add(1)
@@ -34,6 +35,7 @@ func (p *ConnectionPool) Add(conn net.Conn) {
 
 func (p *ConnectionPool) Get(ctx context.Context) (net.Conn, error) {
 	p.mu.Lock()
+	logrus.Debug("Lock acquired in Get")
 	if p.closing {
 		p.mu.Unlock()
 		return nil, fmt.Errorf("connection pool closing")
@@ -54,6 +56,7 @@ func (p *ConnectionPool) Get(ctx context.Context) (net.Conn, error) {
 
 func (p *ConnectionPool) GetTotalConnections() int {
 	p.mu.Lock()
+	logrus.Debug("Lock acquired in GetTotalConnections")
 	defer p.mu.Unlock()
 	if p == nil {
 		return 0
@@ -63,6 +66,7 @@ func (p *ConnectionPool) GetTotalConnections() int {
 
 func (p *ConnectionPool) Close() {
 	p.mu.Lock()
+	logrus.Debug("Lock acquired in Close")
 	defer p.mu.Unlock()
 	if p.closed {
 		return
@@ -80,6 +84,7 @@ func (p *ConnectionPool) Close() {
 func (p *ConnectionPool) AutoScale() {
 	for {
 		p.mu.Lock()
+		logrus.Debug("Lock acquired in AutoScale")
 		size := len(p.conns)
 		p.mu.Unlock()
 
