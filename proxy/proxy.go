@@ -9,15 +9,19 @@ import (
 	"time"
 )
 
+// ConnectionPool represents a pool of network connections.
 type ConnectionPool struct {
-	mu        sync.RWMutex
-	conns     chan net.Conn
-	maxSize   int
-	waitGroup sync.WaitGroup
-	closing   bool
-	closed    bool
+	mu              sync.RWMutex  // Protects the fields below.
+	conns           chan net.Conn // Pool of network connections.
+	maxSize         int           // Maximum size of the pool.
+	waitGroup       sync.WaitGroup
+	closing         bool // Indicates if the pool is closing.
+	closed          bool // Indicates if the pool is closed.
+	totalRequests   int  // Total number of requests made.
+	idleConnections int  // Number of idle connections in the pool.
 }
 
+// NewConnectionPool creates a new connection pool with the given size.
 func NewConnectionPool(size int) *ConnectionPool {
 	return &ConnectionPool{
 		conns:   make(chan net.Conn, size),
@@ -25,26 +29,29 @@ func NewConnectionPool(size int) *ConnectionPool {
 	}
 }
 
+// Add adds a connection to the pool.
 func (p *ConnectionPool) Add(conn net.Conn) {
 	p.mu.Lock()
-	logrus.Debug("Lock acquired in Add")
+	defer p.mu.Unlock()
 	p.conns <- conn
 	p.waitGroup.Add(1)
-	p.mu.Unlock()
+	p.idleConnections++
 }
 
+// Get retrieves a connection from the pool.
 func (p *ConnectionPool) Get(ctx context.Context) (net.Conn, error) {
-	p.mu.RLock()
-	logrus.Debug("Lock acquired in Get")
+	p.mu.Lock()
 	if p.closing {
-		p.mu.RUnlock()
+		p.mu.Unlock()
 		return nil, fmt.Errorf("connection pool closing")
 	}
 	if p.closed {
-		p.mu.RUnlock()
+		p.mu.Unlock()
 		return nil, fmt.Errorf("connection pool closed")
 	}
-	p.mu.RUnlock()
+	p.totalRequests++
+	p.idleConnections--
+	p.mu.Unlock()
 
 	select {
 	case conn := <-p.conns:
@@ -54,23 +61,30 @@ func (p *ConnectionPool) Get(ctx context.Context) (net.Conn, error) {
 	}
 }
 
+// GetTotalConnections returns the total number of connections in the pool.
 func (p *ConnectionPool) GetTotalConnections() int {
 	p.mu.RLock()
-	logrus.Debug("Lock acquired in GetTotalConnections")
-	if p == nil {
-		p.mu.RUnlock()
-		logrus.Debug("ConnectionPool is nil in GetTotalConnections")
-		return 0
-	}
-	totalConnections := len(p.conns)
-	logrus.Debug("Total connections: ", totalConnections)
-	p.mu.RUnlock()
-	return totalConnections
+	defer p.mu.RUnlock()
+	return len(p.conns)
 }
 
+// GetTotalRequests returns the total number of requests made.
+func (p *ConnectionPool) GetTotalRequests() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.totalRequests
+}
+
+// GetIdleConnections returns the number of idle connections in the pool.
+func (p *ConnectionPool) GetIdleConnections() int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.idleConnections
+}
+
+// Close closes all connections in the pool.
 func (p *ConnectionPool) Close() {
 	p.mu.Lock()
-	logrus.Debug("Lock acquired in Close")
 	defer p.mu.Unlock()
 	if p.closed {
 		return
@@ -85,10 +99,10 @@ func (p *ConnectionPool) Close() {
 	p.closed = true
 }
 
+// AutoScale automatically scales the size of the pool based on demand.
 func (p *ConnectionPool) AutoScale() {
 	for {
 		p.mu.RLock()
-		logrus.Debug("Lock acquired in AutoScale")
 		size := len(p.conns)
 		p.mu.RUnlock()
 

@@ -9,6 +9,7 @@ import (
 
 // PrintStats prints stats every 5 seconds
 // PrintStats prints stats every 5 seconds
+// PrintStats prints stats every 5 seconds
 func PrintStats(pool *proxy.ConnectionPool) {
 	logrus.Info("Starting PrintStats goroutine")
 	for {
@@ -23,11 +24,12 @@ func PrintStats(pool *proxy.ConnectionPool) {
 		serverStats["current_cpu_usage"], _ = getAndLogStatFloat("current CPU usage", utils.GetCurrentCPUUsage)
 		serverStats["current_mem_usage"], _ = getAndLogStatFloat("current memory usage", utils.GetCurrentMemoryUsage)
 
-		logrus.WithFields(serverStats).Info("Server stats")
-
-		logrus.Info("Getting total connections")
+		// Get connection pool stats
 		serverStats["total_connections"] = pool.GetTotalConnections()
-		logrus.WithFields(serverStats).Info("Server stats with total connections")
+		serverStats["total_requests"] = pool.GetTotalRequests()
+		serverStats["idle_connections"] = pool.GetIdleConnections()
+
+		logrus.WithFields(serverStats).Info("Server stats")
 	}
 }
 
