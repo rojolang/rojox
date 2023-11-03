@@ -20,10 +20,6 @@ var (
 		Name: "active_connections",
 		Help: "Number of active connections",
 	})
-	idleConnections = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "idle_connections",
-		Help: "Number of idle connections",
-	})
 	logEntries = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "log_entries_total",
 		Help: "Total number of log entries",
@@ -41,9 +37,8 @@ func main() {
 		logrus.Fatalf("Failed to set up SOCKS5 server: %v", err)
 	}
 
-	// Create a connection pool
-	pool := proxy.NewConnectionPool(10)
-	go pool.AutoScale()
+	// Create a connection manager
+	manager := proxy.NewConnectionManager()
 
 	// Get the IP address of the eth0 interface
 	eth0IP, err := utils.GetEth0IP()
@@ -52,7 +47,7 @@ func main() {
 	}
 
 	// Start a goroutine to listen for incoming connections
-	go utils.ListenForConnections(socksServer, eth0IP, pool)
+	go utils.ListenForConnections(socksServer, eth0IP, manager)
 
 	// Set up HTTP server
 	httpServer, err := utils.SetupHTTPServer()
@@ -62,7 +57,7 @@ func main() {
 
 	// Handle termination signals
 	logrus.Info("Handling termination signals")
-	handleTerminationSignals(httpServer, pool)
+	handleTerminationSignals(httpServer)
 	logrus.Info("Termination signals handled")
 
 	// Start HTTP server in a separate goroutine
@@ -76,7 +71,7 @@ func main() {
 
 	// Start a goroutine to print stats every 5 seconds
 	logrus.Info("Starting PrintStats goroutine")
-	go stats.PrintStats(pool)
+	go stats.PrintStats(manager)
 	logrus.Info("PrintStats goroutine started")
 
 	// Wait for termination signal
@@ -88,12 +83,9 @@ func main() {
 	if err := httpServer.Shutdown(context.Background()); err != nil {
 		logrus.Errorf("Failed to shutdown HTTP server: %v", err)
 	}
-
-	// Close all existing connections
-	pool.Close()
 }
 
-func handleTerminationSignals(httpServer *http.Server, pool *proxy.ConnectionPool) {
+func handleTerminationSignals(httpServer *http.Server) {
 	// Create a channel to listen for termination signals
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
@@ -105,8 +97,5 @@ func handleTerminationSignals(httpServer *http.Server, pool *proxy.ConnectionPoo
 		if err := httpServer.Shutdown(context.Background()); err != nil {
 			logrus.Errorf("Failed to shutdown HTTP server: %v", err)
 		}
-
-		// Close all existing connections
-		pool.Close()
 	}()
 }

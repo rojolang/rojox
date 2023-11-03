@@ -62,7 +62,7 @@ func GetEth0IP() (net.IP, error) {
 }
 
 // ListenForConnections starts a goroutine to listen for incoming connections
-func ListenForConnections(socksServer *socks5.Server, eth0IP net.IP, pool *proxy.ConnectionPool) {
+func ListenForConnections(socksServer *socks5.Server, eth0IP net.IP, manager *proxy.ConnectionManager) {
 	go func() {
 		address := fmt.Sprintf("%s:1080", eth0IP.String())
 		logrus.Info("Listening for incoming connections on ", address)
@@ -81,11 +81,12 @@ func ListenForConnections(socksServer *socks5.Server, eth0IP net.IP, pool *proxy
 				"event": "connection_accept",
 				"addr":  conn.RemoteAddr().String(),
 			}).Info("Accepted new connection")
-			pool.Add(conn)
+
 			go func() {
 				if err := socksServer.ServeConn(conn); err != nil {
 					logrus.Error("Failed to serve connection: ", err)
 				}
+				manager.Close(conn)
 			}()
 		}
 	}()

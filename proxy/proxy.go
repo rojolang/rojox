@@ -5,125 +5,38 @@ import (
 	"fmt"
 	"github.com/sirupsen/logrus"
 	"net"
-	"sync"
 	"sync/atomic"
-	"time"
 )
 
-// ConnectionPool represents a pool of network connections.
-type ConnectionPool struct {
-	mu              sync.RWMutex  // Protects the fields below.
-	conns           chan net.Conn // Pool of network connections.
-	maxSize         int           // Maximum size of the pool.
-	waitGroup       sync.WaitGroup
-	closing         bool  // Indicates if the pool is closing.
-	closed          bool  // Indicates if the pool is closed.
-	totalRequests   int64 // Total number of requests made.
-	idleConnections int32 // Number of idle connections in the pool.
+type ConnectionManager struct {
+	totalRequests int64 // Total number of requests made.
 }
 
-// NewConnectionPool creates a new connection pool with the given size.
-func NewConnectionPool(size int) *ConnectionPool {
-	return &ConnectionPool{
-		conns:   make(chan net.Conn, size),
-		maxSize: size,
-	}
+// NewConnectionManager creates a new connection manager.
+func NewConnectionManager() *ConnectionManager {
+	return &ConnectionManager{}
 }
 
-// Add adds a connection to the pool.
-func (p *ConnectionPool) Add(conn net.Conn) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.conns <- conn
-	p.waitGroup.Add(1)
-	atomic.AddInt32(&p.idleConnections, 1)
-}
+// Connect creates a new connection.
+func (m *ConnectionManager) Connect(ctx context.Context, network, address string) (net.Conn, error) {
+	atomic.AddInt64(&m.totalRequests, 1)
 
-// Get retrieves a connection from the pool.
-func (p *ConnectionPool) Get(ctx context.Context) (net.Conn, error) {
-	p.mu.Lock()
-	if p.closing {
-		p.mu.Unlock()
-		return nil, fmt.Errorf("connection pool closing")
+	conn, err := net.Dial(network, address)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create connection: %w", err)
 	}
-	if p.closed {
-		p.mu.Unlock()
-		return nil, fmt.Errorf("connection pool closed")
-	}
-	atomic.AddInt64(&p.totalRequests, 1)
-	atomic.AddInt32(&p.idleConnections, -1)
-	p.mu.Unlock()
 
-	select {
-	case conn := <-p.conns:
-		return conn, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
-}
-
-// GetTotalConnections returns the total number of connections in the pool.
-func (p *ConnectionPool) GetTotalConnections() int {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return len(p.conns)
+	return conn, nil
 }
 
 // GetTotalRequests returns the total number of requests made.
-func (p *ConnectionPool) GetTotalRequests() int64 {
-	return atomic.LoadInt64(&p.totalRequests)
+func (m *ConnectionManager) GetTotalRequests() int64 {
+	return atomic.LoadInt64(&m.totalRequests)
 }
 
-// GetIdleConnections returns the number of idle connections in the pool.
-func (p *ConnectionPool) GetIdleConnections() int {
-	return int(atomic.LoadInt32(&p.idleConnections))
-}
-
-// Close closes all connections in the pool.
-func (p *ConnectionPool) Close() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.closed {
-		return
-	}
-	p.closing = true
-	close(p.conns)
-	for conn := range p.conns {
-		if err := conn.Close(); err != nil {
-			logrus.Error("Failed to close connection: ", err)
-		}
-	}
-	p.closed = true
-}
-
-// AutoScale automatically scales the size of the pool based on demand.
-func (p *ConnectionPool) AutoScale() {
-	for {
-		p.mu.RLock()
-		size := len(p.conns)
-		p.mu.RUnlock()
-
-		if size < p.maxSize/2 {
-			p.mu.Lock()
-			p.maxSize *= 2
-			newConns := make(chan net.Conn, p.maxSize)
-			for conn := range p.conns {
-				newConns <- conn
-			}
-			p.conns = newConns
-			p.mu.Unlock()
-		} else if size > p.maxSize*3/4 {
-			p.mu.Lock()
-			p.waitGroup.Wait()
-			p.maxSize /= 2
-			newConns := make(chan net.Conn, p.maxSize)
-			for i := 0; i < p.maxSize; i++ {
-				newConns <- <-p.conns
-			}
-			p.conns = newConns
-			p.mu.Unlock()
-		}
-
-		time.Sleep(time.Minute)
+// Close closes a connection.
+func (m *ConnectionManager) Close(conn net.Conn) {
+	if err := conn.Close(); err != nil {
+		logrus.Error("Failed to close connection: ", err)
 	}
 }
