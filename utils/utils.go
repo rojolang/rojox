@@ -15,14 +15,13 @@ import (
 )
 
 // CheckIPType checks the type of the IP address (IPv4 or IPv6)
+// CheckIPType checks the type of the IP address (IPv4 or IPv6)
 func CheckIPType(ip string) string {
-	host, _, err := net.SplitHostPort(ip)
-	if err != nil {
-		logrus.Error("Failed to split host port: ", err)
+	parsedIP := net.ParseIP(ip)
+	if parsedIP == nil {
+		logrus.Error("Invalid IP address: ", ip)
 		return "Unknown"
 	}
-
-	parsedIP := net.ParseIP(host)
 	if parsedIP.To4() != nil {
 		return "IPv4"
 	} else if len(parsedIP) == net.IPv6len {
