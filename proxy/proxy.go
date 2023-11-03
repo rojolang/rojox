@@ -10,6 +10,7 @@ import (
 
 type ConnectionManager struct {
 	totalRequests int64 // Total number of requests made.
+	totalFailed   int64 // Total number of failed connection attempts.
 }
 
 // NewConnectionManager creates a new connection manager.
@@ -23,6 +24,7 @@ func (m *ConnectionManager) Connect(ctx context.Context, network, address string
 
 	conn, err := net.Dial(network, address)
 	if err != nil {
+		atomic.AddInt64(&m.totalFailed, 1)
 		logrus.WithFields(logrus.Fields{
 			"network": network,
 			"address": address,
@@ -41,6 +43,11 @@ func (m *ConnectionManager) Connect(ctx context.Context, network, address string
 // GetTotalRequests returns the total number of requests made.
 func (m *ConnectionManager) GetTotalRequests() int64 {
 	return atomic.LoadInt64(&m.totalRequests)
+}
+
+// GetTotalFailed returns the total number of failed connection attempts.
+func (m *ConnectionManager) GetTotalFailed() int64 {
+	return atomic.LoadInt64(&m.totalFailed)
 }
 
 // Close closes a connection.
