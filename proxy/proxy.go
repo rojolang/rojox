@@ -33,38 +33,38 @@ func NewConnectionManager() *ConnectionManager {
 	}
 }
 
-// GetMaxConcurrentConnections returns the maximum number of concurrent connections.
-func (m *ConnectionManager) GetMaxConcurrentConnections() int64 {
-	maxConcurrentConnections := atomic.LoadInt64(&m.maxConcurrentConnections)
-	logrus.WithField("maxConcurrentConnections", maxConcurrentConnections).Info("Max concurrent connections")
-	return maxConcurrentConnections
-}
-
-// Connect creates a new connection.
-func (m *ConnectionManager) Connect(ctx context.Context, network, address string) (net.Conn, error) {
-	conn, err := net.Dial(network, address)
-	if err != nil {
-		atomic.AddInt64(&m.totalFailed, 1)
-		logrus.WithFields(logrus.Fields{
-			"network": network,
-			"address": address,
-		}).Errorf("Failed to create connection: %v", err)
-		return nil, fmt.Errorf("failed to create connection: %w", err)
-	}
-
-	atomic.AddInt64(&m.totalRequests, 1)
-	atomic.AddInt64(&m.totalSuccessfulConnections, 1)
-	logrus.WithFields(logrus.Fields{
-		"network": network,
-		"address": address,
-	}).Info("Successfully created connection")
-
-	return conn, nil
+// isZeroTierIP checks if the given IP address belongs to the ZeroTier network.
+func isZeroTierIP(ip string) bool {
+	_, zeroTierNet, _ := net.ParseCIDR("10.243.0.0/16") // replace with the actual IP range of your ZeroTier network
+	return zeroTierNet.Contains(net.ParseIP(ip))
 }
 
 // HandleConnection serves a connection with the given SOCKS5 server and tracks the number of successful and failed requests.
 func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn net.Conn) {
 	defer m.Close(conn) // Ensure the connection is closed when the goroutine exits
+
+	ip, _, err := net.SplitHostPort(conn.RemoteAddr().String())
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"event":       "split_host_port_error",
+			"local_addr":  conn.LocalAddr().String(),
+			"remote_addr": conn.RemoteAddr().String(),
+		}).Error("Failed to split host port: ", err)
+		return
+	}
+
+	if !isZeroTierIP(ip) {
+		// If it's not a ZeroTier IP, close the connection
+		logrus.WithField("address", conn.RemoteAddr().String()).Info("Rejected connection from non-ZeroTier IP")
+		return
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"event":       "zerotier_connection",
+		"local_addr":  conn.LocalAddr().String(),
+		"remote_addr": conn.RemoteAddr().String(),
+		"zerotier_ip": ip,
+	}).Info("Accepted connection from ZeroTier IP")
 
 	// Create a buffered reader for the connection
 	reader := bufio.NewReader(conn)
@@ -116,6 +116,35 @@ func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn ne
 			"remote_addr": conn.RemoteAddr().String(),
 		}).Info("Successfully served connection")
 	}
+}
+
+// GetMaxConcurrentConnections returns the maximum number of concurrent connections.
+func (m *ConnectionManager) GetMaxConcurrentConnections() int64 {
+	maxConcurrentConnections := atomic.LoadInt64(&m.maxConcurrentConnections)
+	logrus.WithField("maxConcurrentConnections", maxConcurrentConnections).Info("Max concurrent connections")
+	return maxConcurrentConnections
+}
+
+// Connect creates a new connection.
+func (m *ConnectionManager) Connect(ctx context.Context, network, address string) (net.Conn, error) {
+	conn, err := net.Dial(network, address)
+	if err != nil {
+		atomic.AddInt64(&m.totalFailed, 1)
+		logrus.WithFields(logrus.Fields{
+			"network": network,
+			"address": address,
+		}).Errorf("Failed to create connection: %v", err)
+		return nil, fmt.Errorf("failed to create connection: %w", err)
+	}
+
+	atomic.AddInt64(&m.totalRequests, 1)
+	atomic.AddInt64(&m.totalSuccessfulConnections, 1)
+	logrus.WithFields(logrus.Fields{
+		"network": network,
+		"address": address,
+	}).Info("Successfully created connection")
+
+	return conn, nil
 }
 
 // GetTotalRequests returns the total number of requests made.
