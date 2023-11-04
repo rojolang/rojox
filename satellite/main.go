@@ -14,15 +14,17 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 )
 
-// main initializes and starts the satellite server, including setting up a SOCKS5 server,
-// creating a connection manager, listening for incoming connections, setting up an HTTP server,
-// exposing a metrics endpoint for Prometheus, handling termination signals, and starting
-// a goroutine to print stats every 5 seconds. It also registers the satellite server with
-// the UX server upon startup.
-func main() {
+// A map to store the IP addresses of registered satellites
+var (
+	satellites = make(map[string]bool)
+	mu         sync.Mutex
+)
+
+func Run() {
 	logrus.SetLevel(logrus.InfoLevel)
 	logrus.SetOutput(os.Stdout)
 	logrus.Info("Starting main function")

@@ -1,4 +1,4 @@
-package main
+package ux
 
 import (
 	"encoding/json"
@@ -17,7 +17,7 @@ var (
 	mu         sync.Mutex
 )
 
-func main() {
+func Run() {
 	// Set up logging
 	logrus.SetOutput(os.Stdout)
 	logrus.SetLevel(logrus.InfoLevel)
@@ -73,7 +73,6 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintln(w, "Registered new satellite:", ip)
 }
 
-// updatePrometheusConfiguration updates the Prometheus configuration to scrape metrics from the new satellite.
 // updatePrometheusConfiguration updates the Prometheus configuration to scrape metrics from the new satellite.
 func updatePrometheusConfiguration(ip string) error {
 	logrus.WithField("ip", ip).Info("Updating Prometheus configuration")

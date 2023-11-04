@@ -1,4 +1,4 @@
-package main
+package client
 
 import (
 	"context"
@@ -16,7 +16,7 @@ const (
 	MaxGoroutines = 2000 // Maximum number of goroutines to use for the stress test
 )
 
-func main() {
+func Run() {
 	var wg sync.WaitGroup
 	for i := 0; i < MaxGoroutines; i++ {
 		wg.Add(1)
