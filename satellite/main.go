@@ -57,7 +57,7 @@ func Run() {
 	}
 
 	// Expose metrics endpoint for Prometheus
-	http.Handle("/metrics", promhttp.Handler())
+	http.Handle("/metrics-satellite", promhttp.Handler())
 
 	// Handle termination signals
 	logrus.Info("Handling termination signals")

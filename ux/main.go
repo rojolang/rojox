@@ -1,3 +1,4 @@
+// Package ux provides an HTTP server that handles registration requests from satellite servers.
 package ux
 
 import (
@@ -11,12 +12,23 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// A map to store the IP addresses of registered satellites
+// ErrorWithContext is a custom error type that includes additional context about the error.
+type ErrorWithContext struct {
+	Context string
+	Err     error
+}
+
+func (e *ErrorWithContext) Error() string {
+	return fmt.Sprintf("%s: %v", e.Context, e.Err)
+}
+
+// satellites is a map to store the IP addresses of registered satellites.
 var (
 	satellites = make(map[string]bool)
 	mu         sync.Mutex
 )
 
+// Run starts the HTTP server and registers the /register endpoint.
 func Run() {
 	// Set up logging
 	logrus.SetOutput(os.Stdout)
@@ -28,7 +40,10 @@ func Run() {
 	// Start the HTTP server
 	logrus.Info("Starting HTTP server")
 	if err := http.ListenAndServe(":8080", nil); err != nil {
-		logrus.WithFields(logrus.Fields{"context": "starting HTTP server"}).Fatal(err)
+		logrus.Fatal(&ErrorWithContext{
+			Context: "starting HTTP server",
+			Err:     err,
+		})
 	}
 }
 
@@ -43,34 +58,53 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse the request body
-	var data map[string]string
-	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+	ip, err := parseRequest(r)
+	if err != nil {
 		http.Error(w, "Bad request", http.StatusBadRequest)
-		return
-	}
-
-	// Get the IP address from the request
-	ip, ok := data["ip"]
-	if !ok {
-		http.Error(w, "IP not provided", http.StatusBadRequest)
 		return
 	}
 
 	// Register the satellite
 	logrus.WithField("ip", ip).Info("Registering satellite")
-	mu.Lock()
-	satellites[ip] = true
-	mu.Unlock()
+	registerSatellite(ip)
 
 	// Update the Prometheus configuration
 	if err := updatePrometheusConfiguration(ip); err != nil {
-		logrus.WithFields(logrus.Fields{"context": "updating Prometheus configuration"}).Error(err)
+		logrus.Error(err)
 		return
 	}
 
 	// Respond with a success message
 	fmt.Fprintln(w, "Registered new satellite:", ip)
+}
+
+// parseRequest parses the request body and returns the IP address.
+func parseRequest(r *http.Request) (string, error) {
+	var data map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		return "", &ErrorWithContext{
+			Context: "decoding request body",
+			Err:     err,
+		}
+	}
+
+	// Get the IP address from the request
+	ip, ok := data["ip"]
+	if !ok {
+		return "", &ErrorWithContext{
+			Context: "IP not provided",
+			Err:     fmt.Errorf("no IP in request"),
+		}
+	}
+
+	return ip, nil
+}
+
+// registerSatellite adds the given IP address to the map of registered satellites.
+func registerSatellite(ip string) {
+	mu.Lock()
+	defer mu.Unlock()
+	satellites[ip] = true
 }
 
 // updatePrometheusConfiguration updates the Prometheus configuration to scrape metrics from the new satellite.
@@ -80,7 +114,10 @@ func updatePrometheusConfiguration(ip string) error {
 	// Read the existing configuration
 	config, err := os.ReadFile("./docker/prometheus.yml")
 	if err != nil {
-		return fmt.Errorf("failed to read Prometheus configuration: %w", err)
+		return &ErrorWithContext{
+			Context: "reading Prometheus configuration",
+			Err:     err,
+		}
 	}
 
 	// Append the new satellite's IP address
@@ -88,13 +125,19 @@ func updatePrometheusConfiguration(ip string) error {
 
 	// Write the updated configuration back to the file
 	if err := os.WriteFile("./docker/prometheus.yml", config, 0644); err != nil {
-		return fmt.Errorf("failed to write Prometheus configuration: %w", err)
+		return &ErrorWithContext{
+			Context: "writing Prometheus configuration",
+			Err:     err,
+		}
 	}
 
 	// Reload the Prometheus configuration
 	resp, err := http.Post("http://localhost:9090/-/reload", "application/json", nil)
 	if err != nil {
-		return fmt.Errorf("failed to reload Prometheus configuration: %w", err)
+		return &ErrorWithContext{
+			Context: "reloading Prometheus configuration",
+			Err:     err,
+		}
 	}
 	defer resp.Body.Close()
 
@@ -102,9 +145,15 @@ func updatePrometheusConfiguration(ip string) error {
 	if resp.StatusCode != http.StatusOK {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return fmt.Errorf("failed to read response body: %w", err)
+			return &ErrorWithContext{
+				Context: "reading response body",
+				Err:     err,
+			}
 		}
-		return fmt.Errorf("failed to reload Prometheus configuration: %s", body)
+		return &ErrorWithContext{
+			Context: "reloading Prometheus configuration",
+			Err:     fmt.Errorf("failed to reload configuration: %s", body),
+		}
 	}
 
 	return nil
