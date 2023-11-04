@@ -10,10 +10,12 @@ import (
 )
 
 type ConnectionManager struct {
-	totalRequests    int64     // Total number of requests made.
-	totalFailed      int64     // Total number of failed connection attempts.
-	totalConnections int64     // Total number of accepted connections.
-	startTime        time.Time // The time when the ConnectionManager was created.
+	totalRequests              int64     // Total number of requests made.
+	totalFailed                int64     // Total number of failed connection attempts.
+	totalConnections           int64     // Total number of accepted connections.
+	totalSuccessfulConnections int64     // Total number of successfully served connections.
+	totalFailedConnections     int64     // Total number of connections that failed to be served.
+	startTime                  time.Time // The time when the ConnectionManager was created.
 }
 
 // NewConnectionManager creates a new connection manager.
@@ -77,4 +79,14 @@ func (m *ConnectionManager) Close(conn net.Conn) {
 	} else {
 		logrus.WithField("address", conn.RemoteAddr().String()).Info("Successfully closed connection")
 	}
+}
+
+// IncrementSuccessfulConnections increments the totalSuccessfulConnections counter.
+func (m *ConnectionManager) IncrementSuccessfulConnections() {
+	atomic.AddInt64(&m.totalSuccessfulConnections, 1)
+}
+
+// IncrementFailedConnections increments the totalFailedConnections counter.
+func (m *ConnectionManager) IncrementFailedConnections() {
+	atomic.AddInt64(&m.totalFailedConnections, 1)
 }

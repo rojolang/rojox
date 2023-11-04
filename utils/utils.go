@@ -16,6 +16,7 @@ import (
 )
 
 // CheckIPType checks the type of the given IP address.
+// It returns "IPv4", "IPv6" or "Unknown" based on the type of the IP.
 func CheckIPType(ip string) string {
 	parsedIP := net.ParseIP(ip)
 	if parsedIP == nil {
@@ -31,6 +32,7 @@ func CheckIPType(ip string) string {
 }
 
 // SetupSocks5Server sets up a new SOCKS5 server.
+// It returns the SOCKS5 server or an error if there was an issue setting it up.
 func SetupSocks5Server() (*socks5.Server, error) {
 	conf := &socks5.Config{}
 	socksServer, err := socks5.New(conf)
@@ -42,6 +44,7 @@ func SetupSocks5Server() (*socks5.Server, error) {
 }
 
 // GetEth0IP gets the IP address for the eth0 network interface.
+// It returns the IP address or an error if there was an issue getting it.
 func GetEth0IP() (net.IP, error) {
 	iface, err := net.InterfaceByName("eth0")
 	if err != nil {
@@ -60,6 +63,9 @@ func GetEth0IP() (net.IP, error) {
 	}
 	return eth0IP, nil
 }
+
+// ListenForConnections starts a goroutine that listens for incoming connections on the specified address.
+// It returns the listener and an error if there was an issue setting it up.
 func ListenForConnections(socksServer *socks5.Server, eth0IP net.IP, manager *proxy.ConnectionManager) (net.Listener, error) {
 	address := fmt.Sprintf("%s:1080", eth0IP.String())
 	logrus.Info("Listening for incoming connections on ", address)
@@ -87,14 +93,16 @@ func ListenForConnections(socksServer *socks5.Server, eth0IP net.IP, manager *pr
 				"remote_addr": conn.RemoteAddr().String(),
 			}).Info("Accepted new connection")
 
-			go serveConnection(socksServer, conn)
+			go serveConnection(socksServer, conn, manager)
 		}
 	}()
 
 	return listener, nil
 }
 
-func serveConnection(socksServer *socks5.Server, conn net.Conn) {
+// serveConnection serves a connection with the given SOCKS5 server.
+// It tracks the number of successful and failed requests.
+func serveConnection(socksServer *socks5.Server, conn net.Conn, manager *proxy.ConnectionManager) {
 	defer conn.Close() // Ensure the connection is closed when the goroutine exits
 	if err := socksServer.ServeConn(conn); err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -102,9 +110,14 @@ func serveConnection(socksServer *socks5.Server, conn net.Conn) {
 			"local_addr":  conn.LocalAddr().String(),
 			"remote_addr": conn.RemoteAddr().String(),
 		}).Error("Failed to serve connection: ", err)
+		manager.IncrementFailedConnections() // Increment the totalFailedConnections counter
+	} else {
+		manager.IncrementSuccessfulConnections() // Increment the totalSuccessfulConnections counter
 	}
 }
 
+// SetupHTTPServer sets up a new HTTP server with TLS.
+// It returns the HTTP server or an error if there was an issue setting it up.
 func SetupHTTPServer() (*http.Server, error) {
 	// Check if TLS certificates exist
 	_, err := os.Stat("cert.pem")
@@ -126,6 +139,7 @@ func SetupHTTPServer() (*http.Server, error) {
 }
 
 // StartHTTPServer starts the given HTTP server.
+// It returns an error if there was an issue starting it.
 func StartHTTPServer(httpServer *http.Server) error {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		_, err := fmt.Fprintln(w, "Welcome to the server!")
@@ -144,6 +158,7 @@ func StartHTTPServer(httpServer *http.Server) error {
 }
 
 // GetPublicIP gets the public IP address of the server.
+// It returns the IP address or an error if there was an issue getting it.
 func GetPublicIP() (string, error) {
 	resp, err := http.Get("https://api.ipify.org")
 	if err != nil {
@@ -162,6 +177,7 @@ func GetPublicIP() (string, error) {
 }
 
 // GetIPv6 gets the IPv6 address for the eth0 network interface.
+// It returns the IPv6 address or an error if there was an issue getting it.
 func GetIPv6() (string, error) {
 	iface, err := net.InterfaceByName("eth0")
 	if err != nil {
@@ -190,6 +206,7 @@ func GetIPv6() (string, error) {
 }
 
 // GetCurrentCPUUsage gets the current CPU usage.
+// It returns the CPU usage as a percentage or an error if there was an issue getting it.
 func GetCurrentCPUUsage() (float64, error) {
 	cpuPercent, err := cpu.Percent(0, false)
 	if err != nil {
@@ -200,6 +217,7 @@ func GetCurrentCPUUsage() (float64, error) {
 }
 
 // GetCurrentMemoryUsage gets the current memory usage.
+// It returns the memory usage as a percentage or an error if there was an issue getting it.
 func GetCurrentMemoryUsage() (float64, error) {
 	memStat, err := mem.VirtualMemory()
 	if err != nil {
