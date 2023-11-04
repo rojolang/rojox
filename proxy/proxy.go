@@ -33,18 +33,18 @@ func NewConnectionManager() *ConnectionManager {
 	}
 }
 
-// isZeroTierIP checks if the given IP address belongs to the ZeroTier network.
+// isZeroTierIP checks if the given IP address belongs to the ZeroTier network or is the local IP.
 func isZeroTierIP(ip string, conn net.Conn) bool {
 	_, zeroTierNet, _ := net.ParseCIDR("10.243.0.0/16") // replace with the actual IP range of your ZeroTier network
 
-	// Check if the remote address is a ZeroTier IP
-	if zeroTierNet.Contains(net.ParseIP(ip)) {
+	// Check if the remote address is a ZeroTier IP or the local IP
+	if zeroTierNet.Contains(net.ParseIP(ip)) || ip == "10.0.127.101" {
 		return true
 	}
 
-	// If not, check if the local address is a ZeroTier IP
+	// If not, check if the local address is a ZeroTier IP or the local IP
 	localIP, _, _ := net.SplitHostPort(conn.LocalAddr().String())
-	return zeroTierNet.Contains(net.ParseIP(localIP))
+	return zeroTierNet.Contains(net.ParseIP(localIP)) || localIP == "10.0.127.101"
 }
 
 func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn net.Conn) {
