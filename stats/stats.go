@@ -8,6 +8,7 @@ import (
 )
 
 // PrintStats prints stats every 5 seconds
+// PrintStats prints stats every 5 seconds
 func PrintStats(manager *proxy.ConnectionManager) {
 	logrus.Info("Starting PrintStats goroutine")
 	ticker := time.NewTicker(5 * time.Second)
@@ -27,6 +28,9 @@ func PrintStats(manager *proxy.ConnectionManager) {
 			serverStats["total_failed"] = manager.GetTotalFailed()
 			serverStats["total_connections"] = manager.GetTotalConnections()
 			serverStats["uptime"] = manager.GetUptime().String()
+			serverStats["max_concurrent_connections"] = manager.GetMaxConcurrentConnections()
+			serverStats["total_failed_connections"] = manager.GetTotalFailedConnections()
+			serverStats["total_successful_connections"] = manager.GetTotalSuccessfulConnections()
 			logrus.WithFields(serverStats).Info("Server stats")
 		}()
 	}

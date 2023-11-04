@@ -30,10 +30,15 @@ func NewConnectionManager() *ConnectionManager {
 	}
 }
 
-// Connect creates a new connection and updates the relevant counters.
-func (m *ConnectionManager) Connect(ctx context.Context, network, address string) (net.Conn, error) {
-	atomic.AddInt64(&m.totalRequests, 1)
+// GetMaxConcurrentConnections returns the maximum number of concurrent connections.
+func (m *ConnectionManager) GetMaxConcurrentConnections() int64 {
+	maxConcurrentConnections := atomic.LoadInt64(&m.maxConcurrentConnections)
+	logrus.WithField("maxConcurrentConnections", maxConcurrentConnections).Info("Max concurrent connections")
+	return maxConcurrentConnections
+}
 
+// Connect creates a new connection.
+func (m *ConnectionManager) Connect(ctx context.Context, network, address string) (net.Conn, error) {
 	conn, err := net.Dial(network, address)
 	if err != nil {
 		atomic.AddInt64(&m.totalFailed, 1)
@@ -44,12 +49,35 @@ func (m *ConnectionManager) Connect(ctx context.Context, network, address string
 		return nil, fmt.Errorf("failed to create connection: %w", err)
 	}
 
+	atomic.AddInt64(&m.totalRequests, 1)
+	atomic.AddInt64(&m.totalSuccessfulConnections, 1)
 	logrus.WithFields(logrus.Fields{
 		"network": network,
 		"address": address,
 	}).Info("Successfully created connection")
 
 	return conn, nil
+}
+
+// HandleConnection serves a connection with the given SOCKS5 server and tracks the number of successful and failed requests.
+func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn net.Conn) {
+	defer m.Close(conn) // Ensure the connection is closed when the goroutine exits
+	if err := socksServer.ServeConn(conn); err != nil {
+		atomic.AddInt64(&m.totalFailedConnections, 1)
+		logrus.WithFields(logrus.Fields{
+			"event":       "serve_connection_error",
+			"local_addr":  conn.LocalAddr().String(),
+			"remote_addr": conn.RemoteAddr().String(),
+		}).Error("Failed to serve connection: ", err)
+	} else {
+		atomic.AddInt64(&m.totalSuccessfulConnections, 1)
+		atomic.AddInt64(&m.totalRequests, 1)
+		logrus.WithFields(logrus.Fields{
+			"event":       "serve_connection_success",
+			"local_addr":  conn.LocalAddr().String(),
+			"remote_addr": conn.RemoteAddr().String(),
+		}).Info("Successfully served connection")
+	}
 }
 
 // GetTotalRequests returns the total number of requests made.
@@ -102,22 +130,12 @@ func (m *ConnectionManager) IncrementFailedConnections() {
 	atomic.AddInt64(&m.totalFailedConnections, 1)
 }
 
-// GetMaxConcurrentConnections returns the maximum number of concurrent connections.
-func (m *ConnectionManager) GetMaxConcurrentConnections() int64 {
-	return atomic.LoadInt64(&m.maxConcurrentConnections)
+// GetTotalFailedConnections returns the total number of failed connections.
+func (m *ConnectionManager) GetTotalFailedConnections() int64 {
+	return atomic.LoadInt64(&m.totalFailedConnections)
 }
 
-// HandleConnection serves a connection with the given SOCKS5 server and tracks the number of successful and failed requests.
-func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn net.Conn) {
-	defer m.Close(conn) // Ensure the connection is closed when the goroutine exits
-	if err := socksServer.ServeConn(conn); err != nil {
-		logrus.WithFields(logrus.Fields{
-			"event":       "serve_connection_error",
-			"local_addr":  conn.LocalAddr().String(),
-			"remote_addr": conn.RemoteAddr().String(),
-		}).Error("Failed to serve connection: ", err)
-		m.IncrementFailedConnections() // Increment the totalFailedConnections counter
-	} else {
-		m.IncrementSuccessfulConnections() // Increment the totalSuccessfulConnections counter
-	}
+// GetTotalSuccessfulConnections returns the total number of successful connections.
+func (m *ConnectionManager) GetTotalSuccessfulConnections() int64 {
+	return atomic.LoadInt64(&m.totalSuccessfulConnections)
 }
