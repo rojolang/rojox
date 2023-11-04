@@ -125,7 +125,7 @@ func registerWithUXServer(ip string) error {
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest("POST", "http://rojox.net/register", bytes.NewBuffer(reqBody))
+	req, err := http.NewRequest("POST", "http://35.87.31.126/register", bytes.NewBuffer(reqBody))
 	if err != nil {
 		return err
 	}
