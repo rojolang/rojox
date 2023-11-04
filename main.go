@@ -12,18 +12,22 @@ import (
 func main() {
 	clientPtr := flag.Bool("client", false, "Run the client")
 	satellitePtr := flag.Bool("satellite", false, "Run the satellite")
-	uxPtr := flag.Bool("ux", false, "Run the ux")
+	// serverPtr := flag.Bool("server", false, "Run the server")
+	uxPtr := flag.Bool("ux", false, "Run the UX")
 
 	flag.Parse()
 
-	if *clientPtr {
+	switch {
+	case *clientPtr:
 		client.Run() // Replace with actual function to run client
-	} else if *satellitePtr {
+	case *satellitePtr:
 		satellite.Run() // Replace with actual function to run satellite
-	} else if *uxPtr {
-		ux.Run() // Replace with actual function to run server
-	} else {
-		fmt.Println("Please specify --client, --satellite, or --server")
+	//case *serverPtr:
+	//	server.Run() // Replace with actuaxl function to run server
+	case *uxPtr:
+		ux.Run() // Replace with actual function to run UX
+	default:
+		fmt.Println("Please specify --client, --satellite, --server, or --ux")
 		os.Exit(1)
 	}
 }
