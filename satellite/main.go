@@ -1,7 +1,11 @@
-package main
+package satellite
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rojolang/rojox/proxy"
 	"github.com/rojolang/rojox/stats"
 	"github.com/rojolang/rojox/utils"
@@ -13,6 +17,11 @@ import (
 	"syscall"
 )
 
+// main initializes and starts the satellite server, including setting up a SOCKS5 server,
+// creating a connection manager, listening for incoming connections, setting up an HTTP server,
+// exposing a metrics endpoint for Prometheus, handling termination signals, and starting
+// a goroutine to print stats every 5 seconds. It also registers the satellite server with
+// the UX server upon startup.
 func main() {
 	logrus.SetLevel(logrus.InfoLevel)
 	logrus.SetOutput(os.Stdout)
@@ -45,6 +54,9 @@ func main() {
 		logrus.WithFields(logrus.Fields{"context": "setting up HTTP server"}).Fatal(err)
 	}
 
+	// Expose metrics endpoint for Prometheus
+	http.Handle("/metrics", promhttp.Handler())
+
 	// Handle termination signals
 	logrus.Info("Handling termination signals")
 	handleTerminationSignals(httpServer, listener)
@@ -64,6 +76,11 @@ func main() {
 	go stats.PrintStats(manager)
 	logrus.Info("PrintStats goroutine started")
 
+	// Register with the UX server
+	if err := registerWithUXServer(eth0IP.String()); err != nil {
+		logrus.WithFields(logrus.Fields{"context": "registering with UX server"}).Fatal(err)
+	}
+
 	// Wait for termination signal
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
@@ -75,6 +92,9 @@ func main() {
 	}
 }
 
+// handleTerminationSignals sets up a goroutine to listen for termination signals and
+// stops accepting new connections and closes the SOCKS5 server listener when a termination
+// signal is received.
 func handleTerminationSignals(httpServer *http.Server, listener net.Listener) {
 	// Create a channel to listen for termination signals
 	quit := make(chan os.Signal, 1)
@@ -93,4 +113,33 @@ func handleTerminationSignals(httpServer *http.Server, listener net.Listener) {
 			logrus.WithFields(logrus.Fields{"context": "closing SOCKS5 server listener"}).Error(err)
 		}
 	}()
+}
+
+// registerWithUXServer sends a registration request to the UX server with the IP address
+// of the satellite server. It returns an error if the registration fails.
+func registerWithUXServer(ip string) error {
+	// Create the registration request
+	reqBody, err := json.Marshal(map[string]string{"ip": ip})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest("POST", "http://rojox.net/register", bytes.NewBuffer(reqBody))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	// Send the registration request
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// Check the response
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("registration failed: status code %d", resp.StatusCode)
+	}
+
+	return nil
 }

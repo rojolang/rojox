@@ -17,8 +17,6 @@
 # IDE files
 .idea/
 
-# The main files you mentioned
-client/main.go
-client/main2.go
+
 
 
