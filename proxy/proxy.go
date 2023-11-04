@@ -10,6 +10,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"io"
 	"net"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -24,6 +25,8 @@ type ConnectionManager struct {
 	maxConcurrentConnections   int64     // Maximum number of concurrent connections.
 	currentConnections         int64     // Current number of open connections.
 	startTime                  time.Time // The time when the ConnectionManager was created.
+	conns                      map[string]net.Conn
+	connMutex                  sync.Mutex
 }
 
 // NewConnectionManager creates a new connection manager.
@@ -184,13 +187,18 @@ func (m *ConnectionManager) GetUptime() time.Duration {
 	return time.Since(m.startTime)
 }
 
-// Close closes a connection and decrements the currentConnections counter.
 func (m *ConnectionManager) Close(conn net.Conn) {
-	if err := conn.Close(); err != nil {
-		logrus.WithField("address", conn.RemoteAddr().String()).Errorf("Failed to close connection: %v", err)
-	} else {
-		logrus.WithField("address", conn.RemoteAddr().String()).Info("Successfully closed connection")
-		atomic.AddInt64(&m.currentConnections, -1)
+	m.connMutex.Lock()
+	defer m.connMutex.Unlock()
+
+	addr := conn.RemoteAddr().String()
+	if _, ok := m.conns[addr]; ok {
+		if err := conn.Close(); err != nil {
+			logrus.WithField("address", addr).Error("Failed to close connection: ", err)
+		} else {
+			logrus.WithField("address", addr).Info("Successfully closed connection")
+		}
+		delete(m.conns, addr)
 	}
 }
 
