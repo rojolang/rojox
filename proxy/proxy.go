@@ -34,12 +34,19 @@ func NewConnectionManager() *ConnectionManager {
 }
 
 // isZeroTierIP checks if the given IP address belongs to the ZeroTier network.
-func isZeroTierIP(ip string) bool {
+func isZeroTierIP(ip string, conn net.Conn) bool {
 	_, zeroTierNet, _ := net.ParseCIDR("10.243.0.0/16") // replace with the actual IP range of your ZeroTier network
-	return zeroTierNet.Contains(net.ParseIP(ip))
+
+	// Check if the remote address is a ZeroTier IP
+	if zeroTierNet.Contains(net.ParseIP(ip)) {
+		return true
+	}
+
+	// If not, check if the local address is a ZeroTier IP
+	localIP, _, _ := net.SplitHostPort(conn.LocalAddr().String())
+	return zeroTierNet.Contains(net.ParseIP(localIP))
 }
 
-// HandleConnection serves a connection with the given SOCKS5 server and tracks the number of successful and failed requests.
 func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn net.Conn) {
 	defer m.Close(conn) // Ensure the connection is closed when the goroutine exits
 
@@ -53,7 +60,7 @@ func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn ne
 		return
 	}
 
-	if !isZeroTierIP(ip) {
+	if !isZeroTierIP(ip, conn) {
 		// If it's not a ZeroTier IP, close the connection
 		logrus.WithField("address", conn.RemoteAddr().String()).Info("Rejected connection from non-ZeroTier IP")
 		return
