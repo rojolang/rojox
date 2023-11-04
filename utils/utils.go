@@ -93,27 +93,11 @@ func ListenForConnections(socksServer *socks5.Server, eth0IP net.IP, manager *pr
 				"remote_addr": conn.RemoteAddr().String(),
 			}).Info("Accepted new connection")
 
-			go serveConnection(socksServer, conn, manager)
+			go manager.HandleConnection(socksServer, conn) // Call the HandleConnection method of the manager
 		}
 	}()
 
 	return listener, nil
-}
-
-// serveConnection serves a connection with the given SOCKS5 server.
-// It tracks the number of successful and failed requests.
-func serveConnection(socksServer *socks5.Server, conn net.Conn, manager *proxy.ConnectionManager) {
-	defer conn.Close() // Ensure the connection is closed when the goroutine exits
-	if err := socksServer.ServeConn(conn); err != nil {
-		logrus.WithFields(logrus.Fields{
-			"event":       "serve_connection_error",
-			"local_addr":  conn.LocalAddr().String(),
-			"remote_addr": conn.RemoteAddr().String(),
-		}).Error("Failed to serve connection: ", err)
-		manager.IncrementFailedConnections() // Increment the totalFailedConnections counter
-	} else {
-		manager.IncrementSuccessfulConnections() // Increment the totalSuccessfulConnections counter
-	}
 }
 
 // SetupHTTPServer sets up a new HTTP server with TLS.

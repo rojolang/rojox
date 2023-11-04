@@ -1,20 +1,25 @@
+// Package proxy provides functionality to manage and monitor network connections.
 package proxy
 
 import (
 	"context"
 	"fmt"
+	"github.com/armon/go-socks5"
 	"github.com/sirupsen/logrus"
 	"net"
 	"sync/atomic"
 	"time"
 )
 
+// ConnectionManager is responsible for managing and monitoring network connections.
 type ConnectionManager struct {
 	totalRequests              int64     // Total number of requests made.
 	totalFailed                int64     // Total number of failed connection attempts.
 	totalConnections           int64     // Total number of accepted connections.
 	totalSuccessfulConnections int64     // Total number of successfully served connections.
 	totalFailedConnections     int64     // Total number of connections that failed to be served.
+	maxConcurrentConnections   int64     // Maximum number of concurrent connections.
+	currentConnections         int64     // Current number of open connections.
 	startTime                  time.Time // The time when the ConnectionManager was created.
 }
 
@@ -25,7 +30,7 @@ func NewConnectionManager() *ConnectionManager {
 	}
 }
 
-// Connect creates a new connection.
+// Connect creates a new connection and updates the relevant counters.
 func (m *ConnectionManager) Connect(ctx context.Context, network, address string) (net.Conn, error) {
 	atomic.AddInt64(&m.totalRequests, 1)
 
@@ -57,9 +62,14 @@ func (m *ConnectionManager) GetTotalFailed() int64 {
 	return atomic.LoadInt64(&m.totalFailed)
 }
 
-// AcceptConnection increments the totalConnections counter.
+// AcceptConnection increments the totalConnections and currentConnections counters.
+// It also updates the maxConcurrentConnections counter if necessary.
 func (m *ConnectionManager) AcceptConnection() {
 	atomic.AddInt64(&m.totalConnections, 1)
+	atomic.AddInt64(&m.currentConnections, 1)
+	if atomic.LoadInt64(&m.currentConnections) > atomic.LoadInt64(&m.maxConcurrentConnections) {
+		atomic.StoreInt64(&m.maxConcurrentConnections, atomic.LoadInt64(&m.currentConnections))
+	}
 }
 
 // GetTotalConnections returns the total number of accepted connections.
@@ -72,12 +82,13 @@ func (m *ConnectionManager) GetUptime() time.Duration {
 	return time.Since(m.startTime)
 }
 
-// Close closes a connection.
+// Close closes a connection and decrements the currentConnections counter.
 func (m *ConnectionManager) Close(conn net.Conn) {
 	if err := conn.Close(); err != nil {
 		logrus.WithField("address", conn.RemoteAddr().String()).Errorf("Failed to close connection: %v", err)
 	} else {
 		logrus.WithField("address", conn.RemoteAddr().String()).Info("Successfully closed connection")
+		atomic.AddInt64(&m.currentConnections, -1)
 	}
 }
 
@@ -89,4 +100,24 @@ func (m *ConnectionManager) IncrementSuccessfulConnections() {
 // IncrementFailedConnections increments the totalFailedConnections counter.
 func (m *ConnectionManager) IncrementFailedConnections() {
 	atomic.AddInt64(&m.totalFailedConnections, 1)
+}
+
+// GetMaxConcurrentConnections returns the maximum number of concurrent connections.
+func (m *ConnectionManager) GetMaxConcurrentConnections() int64 {
+	return atomic.LoadInt64(&m.maxConcurrentConnections)
+}
+
+// HandleConnection serves a connection with the given SOCKS5 server and tracks the number of successful and failed requests.
+func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn net.Conn) {
+	defer m.Close(conn) // Ensure the connection is closed when the goroutine exits
+	if err := socksServer.ServeConn(conn); err != nil {
+		logrus.WithFields(logrus.Fields{
+			"event":       "serve_connection_error",
+			"local_addr":  conn.LocalAddr().String(),
+			"remote_addr": conn.RemoteAddr().String(),
+		}).Error("Failed to serve connection: ", err)
+		m.IncrementFailedConnections() // Increment the totalFailedConnections counter
+	} else {
+		m.IncrementSuccessfulConnections() // Increment the totalSuccessfulConnections counter
+	}
 }
