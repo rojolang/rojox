@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"sync"
 
 	"github.com/sirupsen/logrus"
@@ -26,24 +25,9 @@ var (
 	mu         sync.Mutex
 )
 
-func LaunchPrometheus() {
-	cmd := exec.Command("prometheus", "--config.file=./prometheus.yml", "--web.enable-lifecycle")
-	err := cmd.Start()
-	if err != nil {
-		logrus.Fatal(&ErrorWithContext{
-			Context: "starting Prometheus server",
-			Err:     err,
-		})
-	}
-	logrus.Info("Prometheus server started")
-}
-
 func Run() {
 	logrus.SetOutput(os.Stdout)
 	logrus.SetLevel(logrus.InfoLevel)
-
-	// Launch Prometheus server
-	LaunchPrometheus()
 
 	http.HandleFunc("/register", registerHandler)
 
