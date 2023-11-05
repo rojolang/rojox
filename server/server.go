@@ -14,10 +14,13 @@ type LoadBalancer struct {
 	mu         sync.Mutex
 }
 
+// NewLoadBalancer creates a new LoadBalancer instance.
 func NewLoadBalancer() *LoadBalancer {
+	logrus.Info("Creating new LoadBalancer") // Added info print
 	return &LoadBalancer{}
 }
 
+// RegisterSatellite registers a new satellite IP address.
 func (lb *LoadBalancer) RegisterSatellite(ip string) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
@@ -25,6 +28,7 @@ func (lb *LoadBalancer) RegisterSatellite(ip string) {
 	logrus.WithField("ip", ip).Info("Registered new satellite")
 }
 
+// NextSatellite returns the next satellite IP address.
 func (lb *LoadBalancer) NextSatellite() (string, error) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
@@ -38,9 +42,12 @@ func (lb *LoadBalancer) NextSatellite() (string, error) {
 	ip := lb.satellites[lb.index]
 	lb.index = (lb.index + 1) % len(lb.satellites)
 
+	logrus.WithField("ip", ip).Info("Selected next satellite") // Added info print
+
 	return ip, nil
 }
 
+// HandleConnection handles an incoming connection.
 func (lb *LoadBalancer) HandleConnection(conn net.Conn) {
 	defer conn.Close()
 
@@ -64,6 +71,7 @@ func (lb *LoadBalancer) HandleConnection(conn net.Conn) {
 	go copyData(satelliteConn, conn)
 }
 
+// copyData copies data between two connections.
 func copyData(dst net.Conn, src net.Conn) {
 	defer dst.Close()
 	defer src.Close()
