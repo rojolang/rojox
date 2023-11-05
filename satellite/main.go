@@ -126,7 +126,8 @@ func registerWithUXServer(ip string) error {
 		logrus.WithField("context", "creating register request").Error(err)
 		return err
 	}
-	req, err := http.NewRequest("POST", "http://cremfreshy.com/register", bytes.NewBuffer(reqBody))
+	req, err := http.NewRequest("POST", "http://35.87.31.126:8080/register", bytes.NewBuffer(reqBody))
+
 	if err != nil {
 		logrus.WithField("context", "creating new request").Error(err)
 		return err
