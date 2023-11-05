@@ -3,7 +3,6 @@ package ux
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"sync"
@@ -58,11 +57,6 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 	logrus.WithField("ip", ip).Info("Registering satellite")
 	registerSatellite(ip)
 
-	if err := updatePrometheusConfiguration(ip); err != nil {
-		logrus.WithFields(logrus.Fields{"context": "updating Prometheus configuration", "error": err}).Error("Error occurred while updating Prometheus configuration")
-		return
-	}
-
 	fmt.Fprintln(w, "Registered new satellite:", ip)
 }
 
@@ -92,55 +86,4 @@ func registerSatellite(ip string) {
 	mu.Lock()
 	defer mu.Unlock()
 	satellites[ip] = true
-}
-
-func updatePrometheusConfiguration(ip string) error {
-	logrus.WithField("ip", ip).Info("Updating Prometheus configuration")
-
-	config := []byte(`
-global:
-  scrape_interval:     1s
-  evaluation_interval: 1s
-
-scrape_configs:
-  - job_name: 'prometheus'
-    static_configs:
-    - targets: ['` + ip + `:8080']
-`)
-
-	if err := os.WriteFile("./prometheus.yml", config, 0644); err != nil {
-		logrus.WithFields(logrus.Fields{"context": "writing Prometheus configuration", "error": err}).Error("Error occurred while writing Prometheus configuration")
-		return &ErrorWithContext{
-			Context: "writing Prometheus configuration",
-			Err:     err,
-		}
-	}
-
-	resp, err := http.Post("http://35.87.31.126:9090/-/reload", "application/json", nil)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{"context": "reloading Prometheus configuration", "error": err}).Error("Error occurred while reloading Prometheus configuration")
-		return &ErrorWithContext{
-			Context: "reloading Prometheus configuration",
-			Err:     err,
-		}
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			logrus.WithFields(logrus.Fields{"context": "reading response body", "error": err}).Error("Error occurred while reading response body")
-			return &ErrorWithContext{
-				Context: "reading response body",
-				Err:     err,
-			}
-		}
-		logrus.WithFields(logrus.Fields{"context": "reloading Prometheus configuration", "error": fmt.Sprintf("failed to reload configuration: %s", body)}).Error("Error occurred while reloading Prometheus configuration")
-		return &ErrorWithContext{
-			Context: "reloading Prometheus configuration",
-			Err:     fmt.Errorf("failed to reload configuration: %s", body),
-		}
-	}
-
-	return nil
 }
