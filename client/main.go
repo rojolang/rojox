@@ -24,7 +24,7 @@ func Run() {
 			defer wg.Done()
 
 			// Create a SOCKS5 dialer
-			dialer, err := proxy.SOCKS5("tcp", "10.7.139.55:1080", nil, proxy.Direct)
+			dialer, err := proxy.SOCKS5("tcp", "35.87.31.126:1080", nil, proxy.Direct)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "can't connect to the proxy:", err)
 				return
