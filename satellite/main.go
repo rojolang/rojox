@@ -48,6 +48,12 @@ func Run() {
 		logrus.WithFields(logrus.Fields{"context": "getting IP of eth0"}).Fatal(err)
 	}
 
+	// Register with the UX server
+	logrus.Info("Registering with UX server")
+	if err := registerWithUXServer(UXServerIP); err != nil {
+		logrus.WithFields(logrus.Fields{"context": "registering with UX server"}).Fatal(err)
+	}
+
 	// Start a goroutine to listen for incoming connections
 	listener, err := utils.ListenForConnections(socksServer, eth0IP, manager)
 	if err != nil {
@@ -81,12 +87,6 @@ func Run() {
 	logrus.Info("Starting PrintStats goroutine")
 	go stats.PrintStats(manager)
 	logrus.Info("PrintStats goroutine started")
-
-	// Register with the UX server
-	logrus.Info("Registering with UX server")
-	if err := registerWithUXServer(UXServerIP); err != nil {
-		logrus.WithFields(logrus.Fields{"context": "registering with UX server"}).Fatal(err)
-	}
 
 	// Wait for termination signal
 	quit := make(chan os.Signal, 1)

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/rojolang/rojox/server" // replace with your actual project path
 	"github.com/sirupsen/logrus"
@@ -37,6 +38,9 @@ func Run() {
 
 	// Start a goroutine to listen for incoming connections
 	go func() {
+		// Add a 5-second delay
+		time.Sleep(5 * time.Second)
+
 		listener, err := net.Listen("tcp", ":1080")
 		if err != nil {
 			logrus.WithFields(logrus.Fields{"context": "listening for connections"}).Error(err)
