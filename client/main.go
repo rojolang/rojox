@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	MaxGoroutines = 2000 // Maximum number of goroutines to use for the stress test
+	MaxGoroutines = 10 // Maximum number of goroutines to use for the stress test
 )
 
 func Run() {

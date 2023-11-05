@@ -14,14 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
-)
-
-// A map to store the IP addresses of registered satellites
-var (
-	satellites = make(map[string]bool)
-	mu         sync.Mutex
 )
 
 func Run() {
