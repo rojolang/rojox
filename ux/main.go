@@ -3,10 +3,12 @@ package ux
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"sync"
 
+	"github.com/rojolang/rojox/server" // replace with your actual project path
 	"github.com/sirupsen/logrus"
 )
 
@@ -29,6 +31,28 @@ func Run() {
 	logrus.SetLevel(logrus.DebugLevel) // Set log level to Debug
 
 	http.HandleFunc("/register", registerHandler)
+
+	// Create a new LoadBalancer
+	lb := server.NewLoadBalancer()
+
+	// Start a goroutine to listen for incoming connections
+	go func() {
+		listener, err := net.Listen("tcp", ":1080")
+		if err != nil {
+			logrus.WithFields(logrus.Fields{"context": "listening for connections"}).Error(err)
+			return
+		}
+		defer listener.Close()
+
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				logrus.WithFields(logrus.Fields{"context": "accepting connection"}).Error(err)
+				return
+			}
+			go lb.HandleConnection(conn)
+		}
+	}()
 
 	logrus.Info("Starting HTTP server")
 	if err := http.ListenAndServe(":8080", nil); err != nil {
