@@ -123,10 +123,12 @@ func registerWithUXServer(ip string) error {
 	// Create the registration request
 	reqBody, err := json.Marshal(map[string]string{"ip": ip})
 	if err != nil {
+		logrus.WithField("context", "creating register request").Error(err)
 		return err
 	}
-	req, err := http.NewRequest("POST", "http://35.87.31.126/register", bytes.NewBuffer(reqBody))
+	req, err := http.NewRequest("POST", "http://cremfreshy.com/register", bytes.NewBuffer(reqBody))
 	if err != nil {
+		logrus.WithField("context", "creating new request").Error(err)
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -134,13 +136,16 @@ func registerWithUXServer(ip string) error {
 	// Send the registration request
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		logrus.WithField("context", "sending register request").Error(err)
 		return err
 	}
 	defer resp.Body.Close()
 
 	// Check the response
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("registration failed: status code %d", resp.StatusCode)
+		err = fmt.Errorf("registration failed: status code %d", resp.StatusCode)
+		logrus.WithField("context", "register response").Error(err)
+		return err
 	}
 
 	return nil

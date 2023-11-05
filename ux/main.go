@@ -1,4 +1,3 @@
-// Package ux provides an HTTP server that handles registration requests from satellite servers.
 package ux
 
 import (
@@ -60,6 +59,7 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 
 	ip, err := parseRequest(r)
 	if err != nil {
+		logrus.WithFields(logrus.Fields{"context": "parsing request", "error": err}).Error("Error occurred while parsing request")
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
@@ -70,7 +70,7 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Update the Prometheus configuration
 	if err := updatePrometheusConfiguration(ip); err != nil {
-		logrus.Error(err)
+		logrus.WithFields(logrus.Fields{"context": "updating Prometheus configuration", "error": err}).Error("Error occurred while updating Prometheus configuration")
 		return
 	}
 
@@ -82,6 +82,7 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 func parseRequest(r *http.Request) (string, error) {
 	var data map[string]string
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
+		logrus.WithFields(logrus.Fields{"context": "decoding request body", "error": err}).Error("Error occurred while decoding request body")
 		return "", &ErrorWithContext{
 			Context: "decoding request body",
 			Err:     err,
@@ -91,6 +92,7 @@ func parseRequest(r *http.Request) (string, error) {
 	// Get the IP address from the request
 	ip, ok := data["ip"]
 	if !ok {
+		logrus.WithFields(logrus.Fields{"context": "getting IP from request"}).Error("IP not provided in request")
 		return "", &ErrorWithContext{
 			Context: "IP not provided",
 			Err:     fmt.Errorf("no IP in request"),
@@ -114,6 +116,7 @@ func updatePrometheusConfiguration(ip string) error {
 	// Read the existing configuration
 	config, err := os.ReadFile("./docker/prometheus.yml")
 	if err != nil {
+		logrus.WithFields(logrus.Fields{"context": "reading Prometheus configuration", "error": err}).Error("Error occurred while reading Prometheus configuration")
 		return &ErrorWithContext{
 			Context: "reading Prometheus configuration",
 			Err:     err,
@@ -125,6 +128,7 @@ func updatePrometheusConfiguration(ip string) error {
 
 	// Write the updated configuration back to the file
 	if err := os.WriteFile("./docker/prometheus.yml", config, 0644); err != nil {
+		logrus.WithFields(logrus.Fields{"context": "writing Prometheus configuration", "error": err}).Error("Error occurred while writing Prometheus configuration")
 		return &ErrorWithContext{
 			Context: "writing Prometheus configuration",
 			Err:     err,
@@ -132,8 +136,9 @@ func updatePrometheusConfiguration(ip string) error {
 	}
 
 	// Reload the Prometheus configuration
-	resp, err := http.Post("http://localhost:9090/-/reload", "application/json", nil)
+	resp, err := http.Post("http://35.87.31.126:9090/-/reload", "application/json", nil)
 	if err != nil {
+		logrus.WithFields(logrus.Fields{"context": "reloading Prometheus configuration", "error": err}).Error("Error occurred while reloading Prometheus configuration")
 		return &ErrorWithContext{
 			Context: "reloading Prometheus configuration",
 			Err:     err,
@@ -145,11 +150,13 @@ func updatePrometheusConfiguration(ip string) error {
 	if resp.StatusCode != http.StatusOK {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
+			logrus.WithFields(logrus.Fields{"context": "reading response body", "error": err}).Error("Error occurred while reading response body")
 			return &ErrorWithContext{
 				Context: "reading response body",
 				Err:     err,
 			}
 		}
+		logrus.WithFields(logrus.Fields{"context": "reloading Prometheus configuration", "error": fmt.Sprintf("failed to reload configuration: %s", body)}).Error("Error occurred while reloading Prometheus configuration")
 		return &ErrorWithContext{
 			Context: "reloading Prometheus configuration",
 			Err:     fmt.Errorf("failed to reload configuration: %s", body),
