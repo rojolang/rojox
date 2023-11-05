@@ -15,25 +15,53 @@ import (
 	"time"
 )
 
-// ConnectionManager is responsible for managing and monitoring network connections.
+type SimpleDialer struct{}
+
+func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
+	return net.Dial(network, address)
+}
+
 type ConnectionManager struct {
-	totalRequests              int64     // Total number of requests made.
-	totalFailed                int64     // Total number of failed connection attempts.
-	totalConnections           int64     // Total number of accepted connections.
-	totalSuccessfulConnections int64     // Total number of successfully served connections.
-	totalFailedConnections     int64     // Total number of connections that failed to be served.
-	maxConcurrentConnections   int64     // Maximum number of concurrent connections.
-	currentConnections         int64     // Current number of open connections.
-	startTime                  time.Time // The time when the ConnectionManager was created.
+	dialer                     Dialer
+	totalRequests              int64
+	totalFailed                int64
+	totalConnections           int64
+	totalSuccessfulConnections int64
+	totalFailedConnections     int64
+	maxConcurrentConnections   int64
+	currentConnections         int64
+	startTime                  time.Time
 	conns                      map[string]net.Conn
 	connMutex                  sync.Mutex
 }
 
-// NewConnectionManager creates a new connection manager.
-func NewConnectionManager() *ConnectionManager {
+func NewConnectionManager(dialer Dialer) *ConnectionManager {
 	return &ConnectionManager{
+		dialer:    dialer,
 		startTime: time.Now(),
 	}
+}
+
+// Connect creates a new connection.
+func (m *ConnectionManager) Connect(ctx context.Context, network, address string) (net.Conn, error) {
+	conn, err := m.dialer.Dial(ctx, network, address)
+	if err != nil {
+		atomic.AddInt64(&m.totalFailed, 1)
+		logrus.WithFields(logrus.Fields{
+			"network": network,
+			"address": address,
+		}).Errorf("Failed to create connection: %v", err)
+		return nil, fmt.Errorf("failed to create connection: %w", err)
+	}
+
+	atomic.AddInt64(&m.totalRequests, 1)
+	atomic.AddInt64(&m.totalSuccessfulConnections, 1)
+	logrus.WithFields(logrus.Fields{
+		"network": network,
+		"address": address,
+	}).Info("Successfully created connection")
+
+	return conn, nil
 }
 
 // isZeroTierIP checks if the given IP address belongs to the ZeroTier network or is the local IP.
@@ -136,26 +164,6 @@ func (m *ConnectionManager) GetMaxConcurrentConnections() int64 {
 }
 
 // Connect creates a new connection.
-func (m *ConnectionManager) Connect(ctx context.Context, network, address string) (net.Conn, error) {
-	conn, err := net.Dial(network, address)
-	if err != nil {
-		atomic.AddInt64(&m.totalFailed, 1)
-		logrus.WithFields(logrus.Fields{
-			"network": network,
-			"address": address,
-		}).Errorf("Failed to create connection: %v", err)
-		return nil, fmt.Errorf("failed to create connection: %w", err)
-	}
-
-	atomic.AddInt64(&m.totalRequests, 1)
-	atomic.AddInt64(&m.totalSuccessfulConnections, 1)
-	logrus.WithFields(logrus.Fields{
-		"network": network,
-		"address": address,
-	}).Info("Successfully created connection")
-
-	return conn, nil
-}
 
 // GetTotalRequests returns the total number of requests made.
 func (m *ConnectionManager) GetTotalRequests() int64 {

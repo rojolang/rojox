@@ -17,6 +17,16 @@ import (
 	"syscall"
 )
 
+// UXServerIP is the IP address of the UX server.
+const UXServerIP = "http://35.87.31.126:8080/register" // replace with the actual IP address of your UX server
+
+// SimpleDialer is a Dialer that uses net.Dial to create connections.
+type SimpleDialer struct{}
+
+func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
+	return net.Dial(network, address)
+}
+
 func Run() {
 	logrus.SetLevel(logrus.DebugLevel) // Set log level to Debug
 	logrus.SetOutput(os.Stdout)
@@ -29,7 +39,8 @@ func Run() {
 	}
 
 	// Create a connection manager
-	manager := proxy.NewConnectionManager()
+	dialer := &SimpleDialer{}
+	manager := proxy.NewConnectionManager(dialer)
 
 	// Get the IP address of the eth0 interface
 	eth0IP, err := utils.GetEth0IP()
@@ -72,8 +83,8 @@ func Run() {
 	logrus.Info("PrintStats goroutine started")
 
 	// Register with the UX server
-	logrus.Info("Registering with UX server")      // Added Info log
-	if err := registerWithUXServer(); err != nil { // Removed eth0IP.String()
+	logrus.Info("Registering with UX server")
+	if err := registerWithUXServer(UXServerIP); err != nil {
 		logrus.WithFields(logrus.Fields{"context": "registering with UX server"}).Fatal(err)
 	}
 
@@ -113,7 +124,7 @@ func handleTerminationSignals(httpServer *http.Server, listener net.Listener) {
 
 // registerWithUXServer sends a registration request to the UX server with the IP address
 // of the satellite server. It returns an error if the registration fails.
-func registerWithUXServer() error {
+func registerWithUXServer(uxServerIP string) error {
 	resp, err := http.Get("https://api.ipify.org?format=json")
 	if err != nil {
 		logrus.WithField("context", "getting public IP").Error(err)
@@ -137,7 +148,7 @@ func registerWithUXServer() error {
 		logrus.WithField("context", "creating register request").Error(err)
 		return err
 	}
-	req, err := http.NewRequest("POST", "http://35.87.31.126:8080/register", bytes.NewBuffer(reqBody))
+	req, err := http.NewRequest("POST", uxServerIP, bytes.NewBuffer(reqBody))
 
 	if err != nil {
 		logrus.WithField("context", "creating new request").Error(err)
