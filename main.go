@@ -12,7 +12,6 @@ import (
 func main() {
 	clientPtr := flag.Bool("client", false, "Run the client")
 	satellitePtr := flag.Bool("satellite", false, "Run the satellite")
-	// serverPtr := flag.Bool("server", false, "Run the server")
 	uxPtr := flag.Bool("ux", false, "Run the UX")
 
 	flag.Parse()
@@ -22,12 +21,12 @@ func main() {
 		client.Run() // Replace with actual function to run client
 	case *satellitePtr:
 		satellite.Run() // Replace with actual function to run satellite
-	//case *serverPtr:
-	//	server.Run() // Replace with actuaxl function to run server
 	case *uxPtr:
-		ux.Run() // Replace with actual function to run UX
+		// Change directory to where Prometheus is located
+		os.Chdir("/path/to/prometheus/directory") // Replace with actual path
+		ux.Run()                                  // Run UX
 	default:
-		fmt.Println("Please specify --client, --satellite, --server, or --ux")
+		fmt.Println("Please specify --client, --satellite, or --ux")
 		os.Exit(1)
 	}
 }
