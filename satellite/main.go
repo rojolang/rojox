@@ -18,7 +18,7 @@ import (
 )
 
 func Run() {
-	logrus.SetLevel(logrus.InfoLevel)
+	logrus.SetLevel(logrus.DebugLevel) // Set log level to Debug
 	logrus.SetOutput(os.Stdout)
 	logrus.Info("Starting main function")
 
@@ -72,7 +72,8 @@ func Run() {
 	logrus.Info("PrintStats goroutine started")
 
 	// Register with the UX server
-	if err := registerWithUXServer(eth0IP.String()); err != nil {
+	logrus.Info("Registering with UX server")      // Added Info log
+	if err := registerWithUXServer(); err != nil { // Removed eth0IP.String()
 		logrus.WithFields(logrus.Fields{"context": "registering with UX server"}).Fatal(err)
 	}
 
@@ -112,7 +113,24 @@ func handleTerminationSignals(httpServer *http.Server, listener net.Listener) {
 
 // registerWithUXServer sends a registration request to the UX server with the IP address
 // of the satellite server. It returns an error if the registration fails.
-func registerWithUXServer(ip string) error {
+func registerWithUXServer() error {
+	resp, err := http.Get("https://api.ipify.org?format=json")
+	if err != nil {
+		logrus.WithField("context", "getting public IP").Error(err)
+		return err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		IP string `json:"ip"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		logrus.WithField("context", "decoding public IP").Error(err)
+		return err
+	}
+
+	ip := result.IP
+
 	// Create the registration request
 	reqBody, err := json.Marshal(map[string]string{"ip": ip})
 	if err != nil {
@@ -128,7 +146,7 @@ func registerWithUXServer(ip string) error {
 	req.Header.Set("Content-Type", "application/json")
 
 	// Send the registration request
-	resp, err := http.DefaultClient.Do(req)
+	resp, err = http.DefaultClient.Do(req)
 	if err != nil {
 		logrus.WithField("context", "sending register request").Error(err)
 		return err

@@ -28,7 +28,7 @@ var (
 
 func Run() {
 	logrus.SetOutput(os.Stdout)
-	logrus.SetLevel(logrus.DebugLevel) // Set log level to Debug
+	logrus.SetLevel(logrus.InfoLevel) // Set log level to Info
 
 	http.HandleFunc("/register", registerHandler)
 
@@ -64,7 +64,7 @@ func Run() {
 }
 
 func registerHandler(w http.ResponseWriter, r *http.Request) {
-	logrus.Debug("Received registration request") // Changed to Debug
+	logrus.Info("Received registration request") // Changed to Info
 
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
@@ -78,7 +78,7 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logrus.WithField("ip", ip).Debug("Registering satellite") // Changed to Debug
+	logrus.WithField("ip", ip).Info("Registering satellite") // Changed to Info
 	registerSatellite(ip)
 
 	fmt.Fprintln(w, "Registered new satellite:", ip)
@@ -110,5 +110,5 @@ func registerSatellite(ip string) {
 	mu.Lock()
 	defer mu.Unlock()
 	satellites[ip] = true
-	logrus.WithField("ip", ip).Debug("Registered satellite") // Added Debug log
+	logrus.WithField("ip", ip).Info("Registered satellite") // Changed Debug to Info
 }
