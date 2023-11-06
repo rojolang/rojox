@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 // UXServerIP is the IP address of the UX server.
@@ -125,51 +126,61 @@ func handleTerminationSignals(httpServer *http.Server, listener net.Listener) {
 // registerWithUXServer sends a registration request to the UX server with the IP address
 // of the satellite server. It returns an error if the registration fails.
 func registerWithUXServer(uxServerIP string) error {
-	resp, err := http.Get("https://api.ipify.org?format=json")
-	if err != nil {
-		logrus.WithField("context", "getting public IP").Error(err)
-		return err
-	}
-	defer resp.Body.Close()
+	for i := 0; i < 3; i++ { // Try to register 3 times
+		resp, err := http.Get("https://api.ipify.org?format=json")
+		if err != nil {
+			logrus.WithField("context", "getting public IP").Error(err)
+			time.Sleep(2 * time.Second) // Wait for 2 seconds before retrying
+			continue
+		}
+		defer resp.Body.Close()
 
-	var result struct {
-		IP string `json:"ip"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		logrus.WithField("context", "decoding public IP").Error(err)
-		return err
+		var result struct {
+			IP string `json:"ip"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			logrus.WithField("context", "decoding public IP").Error(err)
+			time.Sleep(2 * time.Second) // Wait for 2 seconds before retrying
+			continue
+		}
+
+		ip := result.IP
+
+		// Create the registration request
+		reqBody, err := json.Marshal(map[string]string{"ip": ip})
+		if err != nil {
+			logrus.WithField("context", "creating register request").Error(err)
+			time.Sleep(2 * time.Second) // Wait for 2 seconds before retrying
+			continue
+		}
+		req, err := http.NewRequest("POST", uxServerIP, bytes.NewBuffer(reqBody))
+
+		if err != nil {
+			logrus.WithField("context", "creating new request").Error(err)
+			time.Sleep(2 * time.Second) // Wait for 2 seconds before retrying
+			continue
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		// Send the registration request
+		resp, err = http.DefaultClient.Do(req)
+		if err != nil {
+			logrus.WithField("context", "sending register request").Error(err)
+			time.Sleep(2 * time.Second) // Wait for 2 seconds before retrying
+			continue
+		}
+		defer resp.Body.Close()
+
+		// Check the response
+		if resp.StatusCode != http.StatusOK {
+			err = fmt.Errorf("registration failed: status code %d", resp.StatusCode)
+			logrus.WithField("context", "register response").Error(err)
+			time.Sleep(2 * time.Second) // Wait for 2 seconds before retrying
+			continue
+		}
+
+		return nil // If registration is successful, return nil
 	}
 
-	ip := result.IP
-
-	// Create the registration request
-	reqBody, err := json.Marshal(map[string]string{"ip": ip})
-	if err != nil {
-		logrus.WithField("context", "creating register request").Error(err)
-		return err
-	}
-	req, err := http.NewRequest("POST", uxServerIP, bytes.NewBuffer(reqBody))
-
-	if err != nil {
-		logrus.WithField("context", "creating new request").Error(err)
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	// Send the registration request
-	resp, err = http.DefaultClient.Do(req)
-	if err != nil {
-		logrus.WithField("context", "sending register request").Error(err)
-		return err
-	}
-	defer resp.Body.Close()
-
-	// Check the response
-	if resp.StatusCode != http.StatusOK {
-		err = fmt.Errorf("registration failed: status code %d", resp.StatusCode)
-		logrus.WithField("context", "register response").Error(err)
-		return err
-	}
-
-	return nil
+	return fmt.Errorf("registration failed after 3 attempts") // If registration fails after 3 attempts, return an error
 }
