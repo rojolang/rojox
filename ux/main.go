@@ -38,8 +38,10 @@ func Run() {
 
 	// Start a goroutine to listen for incoming connections
 	go func() {
-		// Add a 5-second delay
-		time.Sleep(5 * time.Second)
+		// Wait until at least one satellite has registered
+		for len(satellites) == 0 {
+			time.Sleep(1 * time.Second)
+		}
 
 		listener, err := net.Listen("tcp", ":1080")
 		if err != nil {
