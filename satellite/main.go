@@ -40,13 +40,15 @@ func getZeroTierIP() (string, error) {
 	}
 
 	lines := strings.Split(string(output), "\n")
-	logrus.Info("ZeroTier networks: ", lines) // Added info print
+	logrus.Info("ZeroTier networks: ", lines)
 
 	for _, line := range lines {
 		fields := strings.Fields(line)
-		if len(fields) > 7 && fields[1] == "fada62b0151e0f56" { // Check the second column for the network ID
-			logrus.Info("ZeroTier IP found: ", fields[7]) // The IP address is in the eighth column
-			return fields[7], nil                         // the ZeroTier IP is in the eighth column
+		if len(fields) > 7 && fields[1] == "fada62b0151e0f56" {
+			ipWithMask := fields[7]
+			ip := strings.Split(ipWithMask, "/")[0] // Split the string by '/' and take the first part
+			logrus.Info("ZeroTier IP found: ", ip)
+			return ip, nil
 		}
 	}
 
