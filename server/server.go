@@ -42,6 +42,7 @@ func (lb *LoadBalancer) RegisterSatellite(zeroTierIP string) {
 }
 
 // NextSatellite returns the next satellite IP address.
+// NextSatellite returns the next satellite IP address.
 func (lb *LoadBalancer) NextSatellite() (string, error) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
