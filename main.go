@@ -24,7 +24,7 @@ func main() {
 	case *satellitePtr:
 		satellite.Run() // Run satellite
 	case *uxPtr:
-		err := os.Chdir("/ux") // os.Chdir returns an error
+		err := os.Chdir("./ux") // os.Chdir returns an error
 		if err != nil {
 			fmt.Printf("Failed to change directory: %v\n", err)
 			os.Exit(1)
@@ -57,7 +57,7 @@ func runInteractiveMode() {
 	case "2":
 		satellite.Run() // Run satellite
 	case "3":
-		err := os.Chdir("/ux") // os.Chdir returns an error
+		err := os.Chdir("./ux") // os.Chdir returns an error
 		if err != nil {
 			fmt.Printf("Failed to change directory: %v\n", err)
 			os.Exit(1)
