@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"github.com/sirupsen/logrus"
 	"io"
 	"net"
@@ -31,15 +32,43 @@ func (lb *LoadBalancer) RegisterSatellite(ip string) {
 }
 
 // NextSatellite returns the next satellite IP address.
+// HandleConnection handles an incoming connection.
+func (lb *LoadBalancer) HandleConnection(conn net.Conn) {
+	logrus.WithField("remote_addr", conn.RemoteAddr().String()).Info("Handling connection")
+	defer conn.Close()
+
+	go func() {
+		ip, err := lb.NextSatellite()
+		if err != nil {
+			logrus.WithField("error", err).Error("Failed to get next satellite")
+			return
+		}
+
+		satelliteConn, err := net.Dial("tcp", ip+":1080")
+		if err != nil {
+			logrus.WithFields(logrus.Fields{"ip": ip, "port": "1080", "error": err}).Error("Failed to connect to satellite")
+			return
+		}
+		defer satelliteConn.Close()
+
+		logrus.WithFields(logrus.Fields{"ip": ip, "port": "1080"}).Info("Connected to satellite")
+
+		// Copy data between the incoming connection and the satellite
+		copyData(conn, satelliteConn)
+		copyData(satelliteConn, conn)
+	}()
+}
+
+// NextSatellite returns the next satellite IP address.
 func (lb *LoadBalancer) NextSatellite() (string, error) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 
-	// Wait until at least one satellite has been registered
-	for len(lb.satellites) == 0 {
-		lb.mu.Unlock()
-		time.Sleep(1 * time.Second)
-		lb.mu.Lock()
+	// If there are no satellites registered, return an error
+	if len(lb.satellites) == 0 {
+		err := errors.New("no satellites registered")
+		logrus.Error(err)
+		return "", err
 	}
 
 	ip := lb.satellites[lb.index]
@@ -49,31 +78,6 @@ func (lb *LoadBalancer) NextSatellite() (string, error) {
 	logrus.WithField("satellites", lb.satellites).Info("Current satellites") // Print the current list of satellites
 
 	return ip, nil
-}
-
-// HandleConnection handles an incoming connection.
-func (lb *LoadBalancer) HandleConnection(conn net.Conn) {
-	logrus.WithField("remote_addr", conn.RemoteAddr().String()).Info("Handling connection")
-	defer conn.Close()
-
-	ip, err := lb.NextSatellite()
-	if err != nil {
-		logrus.WithField("error", err).Error("Failed to get next satellite")
-		return
-	}
-
-	satelliteConn, err := net.Dial("tcp", ip+":1080")
-	if err != nil {
-		logrus.WithFields(logrus.Fields{"ip": ip, "port": "1080", "error": err}).Error("Failed to connect to satellite")
-		return
-	}
-	defer satelliteConn.Close()
-
-	logrus.WithFields(logrus.Fields{"ip": ip, "port": "1080"}).Info("Connected to satellite")
-
-	// Copy data between the incoming connection and the satellite
-	go copyData(conn, satelliteConn)
-	go copyData(satelliteConn, conn)
 }
 
 // copyData copies data between two connections.
