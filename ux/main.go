@@ -3,14 +3,13 @@ package ux
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/rojolang/rojox/server"
+	"github.com/sirupsen/logrus"
 	"net"
 	"net/http"
 	"os"
 	"sync"
 	"time"
-
-	"github.com/rojolang/rojox/server"
-	"github.com/sirupsen/logrus"
 )
 
 type ErrorWithContext struct {
@@ -30,7 +29,6 @@ var (
 func Run() {
 	logrus.SetOutput(os.Stdout)
 	logrus.SetLevel(logrus.InfoLevel)
-
 	lb := server.NewLoadBalancer()
 
 	http.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
@@ -46,14 +44,13 @@ func Run() {
 			Err:     err,
 		})
 	}
-}
 
+}
 func startListener(lb *server.LoadBalancer) {
 	for len(satellites) == 0 {
 		logrus.Info("Waiting for satellites to register")
 		time.Sleep(1 * time.Second)
 	}
-
 	listener, err := net.Listen("tcp", ":1080")
 	if err != nil {
 		logrus.WithFields(logrus.Fields{"context": "listening for connections"}).Error(err)
@@ -70,11 +67,10 @@ func startListener(lb *server.LoadBalancer) {
 		}
 		go lb.HandleConnection(conn)
 	}
-}
 
+}
 func registerHandler(w http.ResponseWriter, r *http.Request, lb *server.LoadBalancer) {
 	logrus.Info("Received registration request from ", r.RemoteAddr)
-
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
 		return
@@ -90,8 +86,8 @@ func registerHandler(w http.ResponseWriter, r *http.Request, lb *server.LoadBala
 	logrus.WithField("ip", ip).Info("Registering satellite")
 	registerSatellite(ip)
 	fmt.Fprintln(w, "Registered new satellite:", ip)
-}
 
+}
 func parseRequest(r *http.Request) (string, error) {
 	var data map[string]string
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
@@ -101,7 +97,6 @@ func parseRequest(r *http.Request) (string, error) {
 			Err:     err,
 		}
 	}
-
 	ip, ok := data["ip"]
 	if !ok {
 		logrus.WithFields(logrus.Fields{"context": "getting IP from request"}).Error("IP not provided in request")
@@ -113,8 +108,8 @@ func parseRequest(r *http.Request) (string, error) {
 
 	logrus.WithField("ip", ip).Info("Parsed IP from request")
 	return ip, nil
-}
 
+}
 func registerSatellite(ip string) {
 	mu.Lock()
 	defer mu.Unlock()
