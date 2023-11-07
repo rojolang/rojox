@@ -29,14 +29,12 @@ var (
 
 func Run() {
 	logrus.SetOutput(os.Stdout)
-	logrus.SetLevel(logrus.InfoLevel) // Set log level to Info
+	logrus.SetLevel(logrus.InfoLevel)
 
 	http.HandleFunc("/register", registerHandler)
 
-	// Create a new LoadBalancer
 	lb := server.NewLoadBalancer()
 
-	// Start a goroutine to listen for incoming connections
 	go startListener(lb)
 
 	logrus.Info("Starting HTTP server")
@@ -49,9 +47,8 @@ func Run() {
 }
 
 func startListener(lb *server.LoadBalancer) {
-	// Wait until at least one satellite has registered
 	for len(satellites) == 0 {
-		logrus.Info("Waiting for satellites to register") // Added info print
+		logrus.Info("Waiting for satellites to register")
 		time.Sleep(1 * time.Second)
 	}
 
@@ -62,7 +59,7 @@ func startListener(lb *server.LoadBalancer) {
 	}
 	defer listener.Close()
 
-	logrus.Info("Listening for incoming connections") // Added info print
+	logrus.Info("Listening for incoming connections")
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -112,7 +109,7 @@ func parseRequest(r *http.Request) (string, error) {
 		}
 	}
 
-	logrus.WithField("ip", ip).Info("Parsed IP from request") // Added info print
+	logrus.WithField("ip", ip).Info("Parsed IP from request")
 	return ip, nil
 }
 
@@ -120,5 +117,5 @@ func registerSatellite(ip string) {
 	mu.Lock()
 	defer mu.Unlock()
 	satellites[ip] = true
-	logrus.WithField("ip", ip).Info("Registered satellite") // Changed Debug to Info
+	logrus.WithField("ip", ip).Info("Registered satellite")
 }
