@@ -20,24 +20,16 @@ func main() {
 
 	switch {
 	case *clientPtr:
-		if err := client.Run(); err != nil { // Assuming Run returns an error
-			fmt.Printf("Failed to run client: %v\n", err)
-			os.Exit(1)
-		}
+		client.Run() // Run client
 	case *satellitePtr:
-		if err := satellite.Run(); err != nil { // Assuming Run returns an error
-			fmt.Printf("Failed to run satellite: %v\n", err)
-			os.Exit(1)
-		}
+		satellite.Run() // Run satellite
 	case *uxPtr:
-		if err := os.Chdir("/ux"); err != nil { // os.Chdir returns an error
+		err := os.Chdir("/ux") // os.Chdir returns an error
+		if err != nil {
 			fmt.Printf("Failed to change directory: %v\n", err)
 			os.Exit(1)
 		}
-		if err := ux.Run(); err != nil { // Assuming Run returns an error
-			fmt.Printf("Failed to run UX: %v\n", err)
-			os.Exit(1)
-		}
+		ux.Run() // Run UX
 	default:
 		runInteractiveMode()
 	}
@@ -61,24 +53,16 @@ func runInteractiveMode() {
 
 	switch input {
 	case "1":
-		if err := client.Run(); err != nil { // Assuming Run returns an error
-			fmt.Printf("Failed to run client: %v\n", err)
-			os.Exit(1)
-		}
+		client.Run() // Run client
 	case "2":
-		if err := satellite.Run(); err != nil { // Assuming Run returns an error
-			fmt.Printf("Failed to run satellite: %v\n", err)
-			os.Exit(1)
-		}
+		satellite.Run() // Run satellite
 	case "3":
-		if err := os.Chdir("/ux"); err != nil { // os.Chdir returns an error
+		err := os.Chdir("/ux") // os.Chdir returns an error
+		if err != nil {
 			fmt.Printf("Failed to change directory: %v\n", err)
 			os.Exit(1)
 		}
-		if err := ux.Run(); err != nil { // Assuming Run returns an error
-			fmt.Printf("Failed to run UX: %v\n", err)
-			os.Exit(1)
-		}
+		ux.Run() // Run UX
 	default:
 		fmt.Println("Invalid option. Please enter 1, 2, or 3.")
 		os.Exit(1)
