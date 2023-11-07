@@ -70,7 +70,7 @@ func Run() {
 }
 
 func registerHandler(w http.ResponseWriter, r *http.Request) {
-	logrus.Info("Received registration request") // Changed to Info
+	logrus.Info("Received registration request from ", r.RemoteAddr) // Added remote address to the log
 
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
@@ -84,9 +84,8 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logrus.WithField("ip", ip).Info("Registering satellite") // Changed to Info
+	logrus.WithField("ip", ip).Info("Registering satellite")
 	registerSatellite(ip)
-
 	fmt.Fprintln(w, "Registered new satellite:", ip)
 }
 
@@ -109,6 +108,7 @@ func parseRequest(r *http.Request) (string, error) {
 		}
 	}
 
+	logrus.WithField("ip", ip).Info("Parsed IP from request") // Added info print
 	return ip, nil
 }
 

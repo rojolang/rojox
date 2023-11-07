@@ -40,10 +40,13 @@ func getZeroTierIP() (string, error) {
 	}
 
 	lines := strings.Split(string(output), "\n")
+	logrus.Info("ZeroTier networks: ", lines) // Added info print
+
 	for _, line := range lines {
 		fields := strings.Fields(line)
 		if len(fields) > 0 && fields[0] == "fada62b0151e0f56" {
-			return fields[3], nil // the ZeroTier IP is in the fourth column
+			logrus.Info("ZeroTier IP found: ", fields[3]) // Added info print
+			return fields[3], nil                         // the ZeroTier IP is in the fourth column
 		}
 	}
 
@@ -157,6 +160,7 @@ func registerWithUXServer(uxServerIP string) error {
 			time.Sleep(1 * time.Second) // Wait for 1 second before retrying
 			continue
 		}
+		logrus.Info("Registering IP: ", ip) // Added info print
 
 		// Create the registration request
 		reqBody, err := json.Marshal(map[string]string{"ip": ip})
