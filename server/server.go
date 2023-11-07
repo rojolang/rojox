@@ -18,11 +18,11 @@ type LoadBalancer struct {
 
 // NewLoadBalancer creates a new LoadBalancer instance.
 func NewLoadBalancer() *LoadBalancer {
-	logrus.Info("Creating new LoadBalancer")
-	return &LoadBalancer{}
+	lb := &LoadBalancer{}
+	logrus.WithField("loadBalancer", lb).Info("Creating new LoadBalancer")
+	return lb
 }
 
-// RegisterSatellite registers a new satellite IP address.
 // RegisterSatellite registers a new satellite IP address.
 func (lb *LoadBalancer) RegisterSatellite(zeroTierIP string) {
 	lb.mu.Lock()
@@ -32,6 +32,7 @@ func (lb *LoadBalancer) RegisterSatellite(zeroTierIP string) {
 	lb.wg.Done() // Registration complete
 	logrus.WithField("zeroTierIP", zeroTierIP).Info("Registered new satellite")
 	logrus.WithField("satellites", lb.satellites).Info("Current satellites") // Print the current list of satellites
+	logrus.WithField("loadBalancer", lb).Info("Current LoadBalancer")        // Print the address of the LoadBalancer instance
 }
 
 // NextSatellite returns the next satellite IP address.
@@ -52,6 +53,7 @@ func (lb *LoadBalancer) NextSatellite() (string, error) {
 
 	logrus.WithField("zeroTierIP", zeroTierIP).Info("Selected next satellite")
 	logrus.WithField("satellites", lb.satellites).Info("Current satellites") // Print the current list of satellites
+	logrus.WithField("loadBalancer", lb).Info("Current LoadBalancer")        // Print the address of the LoadBalancer instance
 
 	return zeroTierIP, nil
 }
