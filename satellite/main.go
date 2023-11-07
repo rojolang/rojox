@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rojolang/rojox/proxy"
@@ -13,7 +14,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -27,6 +30,24 @@ type SimpleDialer struct{}
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
 	logrus.WithFields(logrus.Fields{"network": network, "address": address}).Info("Dialing...") // Added info print
 	return net.Dial(network, address)
+}
+
+func getZeroTierIP() (string, error) {
+	cmd := exec.Command("zerotier-cli", "listnetworks")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) > 0 && fields[0] == "fada62b0151e0f56" {
+			return fields[3], nil // the ZeroTier IP is in the fourth column
+		}
+	}
+
+	return "", errors.New("ZeroTier IP not found")
 }
 
 func Run() {
@@ -130,24 +151,12 @@ func handleTerminationSignals(httpServer *http.Server, listener net.Listener) {
 // of the satellite server. It returns an error if the registration fails.
 func registerWithUXServer(uxServerIP string) error {
 	for i := 0; i < 3; i++ { // Try to register 3 times
-		resp, err := http.Get("https://api.ipify.org?format=json")
+		ip, err := getZeroTierIP()
 		if err != nil {
-			logrus.WithField("context", "getting public IP").Error(err)
+			logrus.WithField("context", "getting ZeroTier IP").Error(err)
 			time.Sleep(1 * time.Second) // Wait for 1 second before retrying
 			continue
 		}
-		defer resp.Body.Close()
-
-		var result struct {
-			IP string `json:"ip"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			logrus.WithField("context", "decoding public IP").Error(err)
-			time.Sleep(1 * time.Second) // Wait for 1 second before retrying
-			continue
-		}
-
-		ip := result.IP
 
 		// Create the registration request
 		reqBody, err := json.Marshal(map[string]string{"ip": ip})
@@ -166,7 +175,7 @@ func registerWithUXServer(uxServerIP string) error {
 		req.Header.Set("Content-Type", "application/json")
 
 		// Send the registration request
-		resp, err = http.DefaultClient.Do(req)
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			logrus.WithField("context", "sending register request").Error(err)
 			time.Sleep(1 * time.Second) // Wait for 1 second before retrying
