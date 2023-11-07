@@ -25,6 +25,7 @@ const UXServerIP = "http://35.87.31.126:8080/register" // replace with the actua
 type SimpleDialer struct{}
 
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
+	logrus.WithFields(logrus.Fields{"network": network, "address": address}).Info("Dialing...") // Added info print
 	return net.Dial(network, address)
 }
 
@@ -111,6 +112,8 @@ func handleTerminationSignals(httpServer *http.Server, listener net.Listener) {
 	go func() {
 		<-quit
 
+		logrus.Info("Received termination signal") // Added info print
+
 		// Stop accepting new connections
 		if err := httpServer.Shutdown(context.Background()); err != nil {
 			logrus.WithFields(logrus.Fields{"context": "shutting down HTTP server"}).Error(err)
@@ -130,7 +133,7 @@ func registerWithUXServer(uxServerIP string) error {
 		resp, err := http.Get("https://api.ipify.org?format=json")
 		if err != nil {
 			logrus.WithField("context", "getting public IP").Error(err)
-			time.Sleep(2 * time.Second) // Wait for 2 seconds before retrying
+			time.Sleep(1 * time.Second) // Wait for 1 second before retrying
 			continue
 		}
 		defer resp.Body.Close()
@@ -140,7 +143,7 @@ func registerWithUXServer(uxServerIP string) error {
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			logrus.WithField("context", "decoding public IP").Error(err)
-			time.Sleep(2 * time.Second) // Wait for 2 seconds before retrying
+			time.Sleep(1 * time.Second) // Wait for 1 second before retrying
 			continue
 		}
 
@@ -150,14 +153,14 @@ func registerWithUXServer(uxServerIP string) error {
 		reqBody, err := json.Marshal(map[string]string{"ip": ip})
 		if err != nil {
 			logrus.WithField("context", "creating register request").Error(err)
-			time.Sleep(2 * time.Second) // Wait for 2 seconds before retrying
+			time.Sleep(1 * time.Second) // Wait for 1 second before retrying
 			continue
 		}
 		req, err := http.NewRequest("POST", uxServerIP, bytes.NewBuffer(reqBody))
 
 		if err != nil {
 			logrus.WithField("context", "creating new request").Error(err)
-			time.Sleep(2 * time.Second) // Wait for 2 seconds before retrying
+			time.Sleep(1 * time.Second) // Wait for 1 second before retrying
 			continue
 		}
 		req.Header.Set("Content-Type", "application/json")
@@ -166,7 +169,7 @@ func registerWithUXServer(uxServerIP string) error {
 		resp, err = http.DefaultClient.Do(req)
 		if err != nil {
 			logrus.WithField("context", "sending register request").Error(err)
-			time.Sleep(2 * time.Second) // Wait for 2 seconds before retrying
+			time.Sleep(1 * time.Second) // Wait for 1 second before retrying
 			continue
 		}
 		defer resp.Body.Close()
@@ -175,11 +178,12 @@ func registerWithUXServer(uxServerIP string) error {
 		if resp.StatusCode != http.StatusOK {
 			err = fmt.Errorf("registration failed: status code %d", resp.StatusCode)
 			logrus.WithField("context", "register response").Error(err)
-			time.Sleep(2 * time.Second) // Wait for 2 seconds before retrying
+			time.Sleep(1 * time.Second) // Wait for 1 second before retrying
 			continue
 		}
 
-		return nil // If registration is successful, return nil
+		logrus.Info("Successfully registered with UX server") // Added info print
+		return nil                                            // If registration is successful, return nil
 	}
 
 	return fmt.Errorf("registration failed after 3 attempts") // If registration fails after 3 attempts, return an error

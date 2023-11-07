@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 )
 
 type LoadBalancer struct {
@@ -26,6 +27,7 @@ func (lb *LoadBalancer) RegisterSatellite(ip string) {
 	defer lb.mu.Unlock()
 	lb.satellites = append(lb.satellites, ip)
 	logrus.WithField("ip", ip).Info("Registered new satellite")
+	time.Sleep(1 * time.Second) // Reduced delay to 1 second
 }
 
 // NextSatellite returns the next satellite IP address.
@@ -49,6 +51,7 @@ func (lb *LoadBalancer) NextSatellite() (string, error) {
 
 // HandleConnection handles an incoming connection.
 func (lb *LoadBalancer) HandleConnection(conn net.Conn) {
+	logrus.WithField("remote_addr", conn.RemoteAddr().String()).Info("Handling connection...") // Added info print
 	defer conn.Close()
 
 	ip, err := lb.NextSatellite()
@@ -73,6 +76,10 @@ func (lb *LoadBalancer) HandleConnection(conn net.Conn) {
 
 // copyData copies data between two connections.
 func copyData(dst net.Conn, src net.Conn) {
+	logrus.WithFields(logrus.Fields{
+		"dst": dst.RemoteAddr().String(),
+		"src": src.RemoteAddr().String(),
+	}).Info("Copying data...") // Added info print
 	defer dst.Close()
 	defer src.Close()
 

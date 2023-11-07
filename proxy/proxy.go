@@ -22,6 +22,7 @@ type Dialer interface {
 type SimpleDialer struct{}
 
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
+	logrus.WithFields(logrus.Fields{"network": network, "address": address}).Info("Dialing...") // Added info print
 	return net.Dial(network, address)
 }
 
@@ -43,6 +44,7 @@ func NewConnectionManager(dialer Dialer) *ConnectionManager {
 	return &ConnectionManager{
 		dialer:    dialer,
 		startTime: time.Now(),
+		conns:     make(map[string]net.Conn),
 	}
 }
 
@@ -60,6 +62,9 @@ func (m *ConnectionManager) Connect(ctx context.Context, network, address string
 
 	atomic.AddInt64(&m.totalRequests, 1)
 	atomic.AddInt64(&m.totalSuccessfulConnections, 1)
+	m.connMutex.Lock()
+	m.conns[conn.RemoteAddr().String()] = conn
+	m.connMutex.Unlock()
 	logrus.WithFields(logrus.Fields{
 		"network": network,
 		"address": address,
@@ -209,8 +214,8 @@ func (m *ConnectionManager) Close(conn net.Conn) {
 			logrus.WithField("address", addr).Error("Failed to close connection: ", err)
 		} else {
 			logrus.WithField("address", addr).Info("Successfully closed connection")
+			delete(m.conns, addr)
 		}
-		delete(m.conns, addr)
 	}
 }
 
