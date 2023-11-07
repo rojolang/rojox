@@ -21,7 +21,7 @@ func NewLoadBalancer() *LoadBalancer {
 	return &LoadBalancer{}
 }
 
-// RegisterSatellite registers a new satellite IP address.
+// In the RegisterSatellite function:
 func (lb *LoadBalancer) RegisterSatellite(zeroTierIP string) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()

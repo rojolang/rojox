@@ -180,6 +180,9 @@ func registerWithUXServer(uxServerIP string) error {
 		}
 		req.Header.Set("Content-Type", "application/json")
 
+		// Log the full request
+		logrus.WithField("request", req).Info("Sending registration request")
+
 		// Send the registration request
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -188,6 +191,9 @@ func registerWithUXServer(uxServerIP string) error {
 			continue
 		}
 		defer resp.Body.Close()
+
+		// Log the full response
+		logrus.WithField("response", resp).Info("Received registration response")
 
 		// Check the response
 		if resp.StatusCode != http.StatusOK {
