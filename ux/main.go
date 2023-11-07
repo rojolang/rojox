@@ -31,9 +31,11 @@ func Run() {
 	logrus.SetOutput(os.Stdout)
 	logrus.SetLevel(logrus.InfoLevel)
 
-	http.HandleFunc("/register", registerHandler)
-
 	lb := server.NewLoadBalancer()
+
+	http.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
+		registerHandler(w, r, lb) // Pass the LoadBalancer instance to the handler
+	})
 
 	go startListener(lb)
 
@@ -70,7 +72,7 @@ func startListener(lb *server.LoadBalancer) {
 	}
 }
 
-func registerHandler(w http.ResponseWriter, r *http.Request) {
+func registerHandler(w http.ResponseWriter, r *http.Request, lb *server.LoadBalancer) {
 	logrus.Info("Received registration request from ", r.RemoteAddr)
 
 	if r.Method != http.MethodPost {

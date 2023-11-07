@@ -23,9 +23,6 @@ func NewLoadBalancer() *LoadBalancer {
 	return lb
 }
 
-// RegisterSatellite registers a new satellite IP address.
-// RegisterSatellite registers a new satellite IP address.
-// RegisterSatellite registers a new satellite IP address.
 func (lb *LoadBalancer) RegisterSatellite(zeroTierIP string) {
 	if zeroTierIP == "" {
 		logrus.Error("Cannot register satellite: IP is empty")
@@ -41,7 +38,6 @@ func (lb *LoadBalancer) RegisterSatellite(zeroTierIP string) {
 	logrus.WithField("loadBalancer", lb).Info("Current LoadBalancer")        // Print the address of the LoadBalancer instance
 }
 
-// NextSatellite returns the next satellite IP address.
 // NextSatellite returns the next satellite IP address.
 func (lb *LoadBalancer) NextSatellite() (string, error) {
 	lb.mu.Lock()
@@ -65,7 +61,6 @@ func (lb *LoadBalancer) NextSatellite() (string, error) {
 	return zeroTierIP, nil
 }
 
-// HandleConnection handles an incoming connection.
 // HandleConnection handles an incoming connection.
 func (lb *LoadBalancer) HandleConnection(conn net.Conn) {
 	logrus.WithField("remote_addr", conn.RemoteAddr().String()).Info("Handling connection")
@@ -100,8 +95,6 @@ func (lb *LoadBalancer) HandleConnection(conn net.Conn) {
 		copyData(satelliteConn, conn)
 	}()
 }
-
-// NextSatellite returns the next satellite IP address.
 
 // copyData copies data between two connections.
 func copyData(dst net.Conn, src net.Conn) {
