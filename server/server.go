@@ -24,6 +24,7 @@ func NewLoadBalancer() *LoadBalancer {
 }
 
 // RegisterSatellite registers a new satellite IP address.
+// RegisterSatellite registers a new satellite IP address.
 func (lb *LoadBalancer) RegisterSatellite(zeroTierIP string) {
 	if zeroTierIP == "" {
 		logrus.Error("Cannot register satellite: IP is empty")
@@ -58,8 +59,8 @@ func (lb *LoadBalancer) NextSatellite() (string, error) {
 	lb.index = (lb.index + 1) % len(lb.satellites)
 
 	logrus.WithField("zeroTierIP", zeroTierIP).Info("Selected next satellite")
-	logrus.WithField("satellites", lb.satellites).Info("Current satellites") // Print the current list of satellites
-	logrus.WithField("loadBalancer", lb).Info("Current LoadBalancer")        // Print the address of the LoadBalancer instance
+	logrus.WithField("satellites", lb.satellites).Info("Current satellites after selection") // Print the current list of satellites after selection
+	logrus.WithField("loadBalancer", lb).Info("Current LoadBalancer after selection")        // Print the address of the LoadBalancer instance after selection
 
 	return zeroTierIP, nil
 }
