@@ -44,6 +44,7 @@ func (lb *LoadBalancer) HandleConnection(conn net.Conn) {
 			return
 		}
 
+		logrus.WithField("zeroTierIP", zeroTierIP).Info("Dialing satellite")
 		satelliteConn, err := net.Dial("tcp", zeroTierIP+":1080")
 		if err != nil {
 			logrus.WithFields(logrus.Fields{"zeroTierIP": zeroTierIP, "port": "1080", "error": err}).Error("Failed to connect to satellite")
@@ -54,7 +55,9 @@ func (lb *LoadBalancer) HandleConnection(conn net.Conn) {
 		logrus.WithFields(logrus.Fields{"zeroTierIP": zeroTierIP, "port": "1080"}).Info("Connected to satellite")
 
 		// Copy data between the incoming connection and the satellite
+		logrus.WithField("zeroTierIP", zeroTierIP).Info("Copying data to satellite")
 		copyData(conn, satelliteConn)
+		logrus.WithField("zeroTierIP", zeroTierIP).Info("Copying data from satellite")
 		copyData(satelliteConn, conn)
 	}()
 }
