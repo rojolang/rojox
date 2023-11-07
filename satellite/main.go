@@ -44,8 +44,8 @@ func getZeroTierIP() (string, error) {
 
 	for _, line := range lines {
 		fields := strings.Fields(line)
-		if len(fields) > 7 && fields[1] == "fada62b0151e0f56" {
-			ipWithMask := fields[7]
+		if len(fields) > 8 && fields[2] == "fada62b0151e0f56" {
+			ipWithMask := fields[8]
 			ip := strings.Split(ipWithMask, "/")[0] // Split the string by '/' and take the first part
 			logrus.Info("ZeroTier IP found: ", ip)
 			return ip, nil
