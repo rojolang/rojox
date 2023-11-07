@@ -23,6 +23,7 @@ func NewLoadBalancer() *LoadBalancer {
 }
 
 // RegisterSatellite registers a new satellite IP address.
+// RegisterSatellite registers a new satellite IP address.
 func (lb *LoadBalancer) RegisterSatellite(zeroTierIP string) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
@@ -31,6 +32,28 @@ func (lb *LoadBalancer) RegisterSatellite(zeroTierIP string) {
 	lb.wg.Done() // Registration complete
 	logrus.WithField("zeroTierIP", zeroTierIP).Info("Registered new satellite")
 	logrus.WithField("satellites", lb.satellites).Info("Current satellites") // Print the current list of satellites
+}
+
+// NextSatellite returns the next satellite IP address.
+func (lb *LoadBalancer) NextSatellite() (string, error) {
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+
+	// If there are no satellites registered, return an error
+	if len(lb.satellites) == 0 {
+		err := errors.New("no satellites registered")
+		logrus.WithField("satellites", lb.satellites).Info("Satellites at the time of error") // Print the current list of satellites at the time of error
+		logrus.Error(err)
+		return "", err
+	}
+
+	zeroTierIP := lb.satellites[lb.index]
+	lb.index = (lb.index + 1) % len(lb.satellites)
+
+	logrus.WithField("zeroTierIP", zeroTierIP).Info("Selected next satellite")
+	logrus.WithField("satellites", lb.satellites).Info("Current satellites") // Print the current list of satellites
+
+	return zeroTierIP, nil
 }
 
 // HandleConnection handles an incoming connection.
@@ -77,25 +100,6 @@ func (lb *LoadBalancer) HandleConnection(conn net.Conn) {
 }
 
 // NextSatellite returns the next satellite IP address.
-func (lb *LoadBalancer) NextSatellite() (string, error) {
-	lb.mu.Lock()
-	defer lb.mu.Unlock()
-
-	// If there are no satellites registered, return an error
-	if len(lb.satellites) == 0 {
-		err := errors.New("no satellites registered")
-		logrus.Error(err)
-		return "", err
-	}
-
-	zeroTierIP := lb.satellites[lb.index]
-	lb.index = (lb.index + 1) % len(lb.satellites)
-
-	logrus.WithField("zeroTierIP", zeroTierIP).Info("Selected next satellite")
-	logrus.WithField("satellites", lb.satellites).Info("Current satellites") // Print the current list of satellites
-
-	return zeroTierIP, nil
-}
 
 // copyData copies data between two connections.
 func copyData(dst net.Conn, src net.Conn) {
