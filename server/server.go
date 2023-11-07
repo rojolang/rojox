@@ -75,6 +75,8 @@ func (lb *LoadBalancer) HandleConnection(conn net.Conn) {
 	lb.wg.Wait() // Wait for the satellite registration to complete
 
 	go func() {
+		logrus.WithField("loadBalancer", lb).Info("Current LoadBalancer before NextSatellite")        // Print the address of the LoadBalancer instance
+		logrus.WithField("satellites", lb.satellites).Info("Current satellites before NextSatellite") // Print the current list of satellites
 		zeroTierIP, err := lb.NextSatellite()
 		if err != nil {
 			logrus.WithField("error", err).Error("Failed to get next satellite")
