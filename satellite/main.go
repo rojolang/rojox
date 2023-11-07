@@ -44,7 +44,7 @@ func getZeroTierIP() (string, error) {
 
 	for _, line := range lines {
 		fields := strings.Fields(line)
-		if len(fields) > 2 && fields[1] == "fada62b0151e0f56" { // Check the second column for the network ID
+		if len(fields) > 7 && fields[1] == "fada62b0151e0f56" { // Check the second column for the network ID
 			logrus.Info("ZeroTier IP found: ", fields[7]) // The IP address is in the eighth column
 			return fields[7], nil                         // the ZeroTier IP is in the eighth column
 		}
