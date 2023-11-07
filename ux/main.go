@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"sync"
 	"time"
 )
 
@@ -21,14 +20,10 @@ func (e *ErrorWithContext) Error() string {
 	return fmt.Sprintf("%s: %v", e.Context, e.Err)
 }
 
-var (
-	satellites = make(map[string]bool)
-	mu         sync.Mutex
-)
-
 func Run() {
 	logrus.SetOutput(os.Stdout)
 	logrus.SetLevel(logrus.InfoLevel)
+
 	lb := server.NewLoadBalancer()
 
 	http.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
@@ -44,33 +39,33 @@ func Run() {
 			Err:     err,
 		})
 	}
-
 }
-func startListener(lb *server.LoadBalancer) {
-	for len(satellites) == 0 {
-		logrus.Info("Waiting for satellites to register")
-		time.Sleep(1 * time.Second)
-	}
-	listener, err := net.Listen("tcp", ":1080")
-	if err != nil {
-		logrus.WithFields(logrus.Fields{"context": "listening for connections"}).Error(err)
-		return
-	}
-	defer listener.Close()
 
-	logrus.Info("Listening for incoming connections")
+func startListener(lb *server.LoadBalancer) {
 	for {
-		conn, err := listener.Accept()
+		logrus.Info("Listening for incoming connections")
+		listener, err := net.Listen("tcp", ":1080")
 		if err != nil {
-			logrus.WithFields(logrus.Fields{"context": "accepting connection"}).Error(err)
+			logrus.WithFields(logrus.Fields{"context": "listening for connections"}).Error(err)
 			return
 		}
-		go lb.HandleConnection(conn)
-	}
+		defer listener.Close()
 
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				logrus.WithFields(logrus.Fields{"context": "accepting connection"}).Error(err)
+				break
+			}
+			go lb.HandleConnection(conn)
+		}
+		time.Sleep(1 * time.Second) // If the listener breaks, wait a second before retrying
+	}
 }
+
 func registerHandler(w http.ResponseWriter, r *http.Request, lb *server.LoadBalancer) {
 	logrus.Info("Received registration request from ", r.RemoteAddr)
+
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
 		return
@@ -84,35 +79,23 @@ func registerHandler(w http.ResponseWriter, r *http.Request, lb *server.LoadBala
 	}
 
 	logrus.WithField("ip", ip).Info("Registering satellite")
-	registerSatellite(ip)
+	lb.RegisterSatellite(ip) // Register satellite with the LoadBalancer
 	fmt.Fprintln(w, "Registered new satellite:", ip)
-
 }
+
 func parseRequest(r *http.Request) (string, error) {
 	var data map[string]string
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
 		logrus.WithFields(logrus.Fields{"context": "decoding request body", "error": err}).Error("Error occurred while decoding request body")
-		return "", &ErrorWithContext{
-			Context: "decoding request body",
-			Err:     err,
-		}
+		return "", err
 	}
+
 	ip, ok := data["ip"]
 	if !ok {
 		logrus.WithFields(logrus.Fields{"context": "getting IP from request"}).Error("IP not provided in request")
-		return "", &ErrorWithContext{
-			Context: "IP not provided",
-			Err:     fmt.Errorf("no IP in request"),
-		}
+		return "", fmt.Errorf("IP not provided in request")
 	}
 
 	logrus.WithField("ip", ip).Info("Parsed IP from request")
 	return ip, nil
-
-}
-func registerSatellite(ip string) {
-	mu.Lock()
-	defer mu.Unlock()
-	satellites[ip] = true
-	logrus.WithField("ip", ip).Info("Registered satellite")
 }
