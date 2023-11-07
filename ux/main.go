@@ -70,7 +70,7 @@ func Run() {
 }
 
 func registerHandler(w http.ResponseWriter, r *http.Request) {
-	logrus.Info("Received registration request from ", r.RemoteAddr) // Added remote address to the log
+	logrus.Info("Received registration request from ", r.RemoteAddr)
 
 	if r.Method != http.MethodPost {
 		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
