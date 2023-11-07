@@ -25,6 +25,7 @@ func NewLoadBalancer() *LoadBalancer {
 
 // RegisterSatellite registers a new satellite IP address.
 // RegisterSatellite registers a new satellite IP address.
+// RegisterSatellite registers a new satellite IP address.
 func (lb *LoadBalancer) RegisterSatellite(zeroTierIP string) {
 	if zeroTierIP == "" {
 		logrus.Error("Cannot register satellite: IP is empty")
@@ -33,10 +34,8 @@ func (lb *LoadBalancer) RegisterSatellite(zeroTierIP string) {
 
 	logrus.WithField("zeroTierIP", zeroTierIP).Info("Registering satellite") // Log the IP being registered
 	lb.mu.Lock()
-	defer lb.mu.Unlock()
-	lb.wg.Add(1) // Wait for the registration to complete
 	lb.satellites = append(lb.satellites, zeroTierIP)
-	lb.wg.Done() // Registration complete
+	lb.mu.Unlock()
 	logrus.WithField("zeroTierIP", zeroTierIP).Info("Registered new satellite")
 	logrus.WithField("satellites", lb.satellites).Info("Current satellites") // Print the current list of satellites
 	logrus.WithField("loadBalancer", lb).Info("Current LoadBalancer")        // Print the address of the LoadBalancer instance
@@ -66,14 +65,13 @@ func (lb *LoadBalancer) NextSatellite() (string, error) {
 }
 
 // HandleConnection handles an incoming connection.
+// HandleConnection handles an incoming connection.
 func (lb *LoadBalancer) HandleConnection(conn net.Conn) {
 	logrus.WithField("remote_addr", conn.RemoteAddr().String()).Info("Handling connection")
 	defer func() {
 		logrus.WithField("remote_addr", conn.RemoteAddr().String()).Info("Closing connection")
 		conn.Close()
 	}()
-
-	lb.wg.Wait() // Wait for the satellite registration to complete
 
 	go func() {
 		logrus.WithField("loadBalancer", lb).Info("Current LoadBalancer before NextSatellite")        // Print the address of the LoadBalancer instance
@@ -88,15 +86,7 @@ func (lb *LoadBalancer) HandleConnection(conn net.Conn) {
 		satelliteConn, err := net.DialTimeout("tcp", zeroTierIP+":1080", 5*time.Second)
 		if err != nil {
 			logrus.WithFields(logrus.Fields{"zeroTierIP": zeroTierIP, "port": "1080", "error": err}).Error("Failed to connect to satellite via ZeroTier IP")
-
-			// Try connecting with the public IP
-			publicIP := "" // Replace with the public IP of the satellite
-			logrus.WithField("publicIP", publicIP).Info("Dialing satellite via public IP")
-			satelliteConn, err = net.DialTimeout("tcp", publicIP+":1080", 5*time.Second)
-			if err != nil {
-				logrus.WithFields(logrus.Fields{"publicIP": publicIP, "port": "1080", "error": err}).Error("Failed to connect to satellite via public IP")
-				return
-			}
+			return
 		}
 		defer satelliteConn.Close()
 
