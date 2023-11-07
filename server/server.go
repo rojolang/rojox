@@ -21,7 +21,7 @@ func NewLoadBalancer() *LoadBalancer {
 	return &LoadBalancer{}
 }
 
-// In the RegisterSatellite function:
+// RegisterSatellite registers a new satellite IP address.
 func (lb *LoadBalancer) RegisterSatellite(zeroTierIP string) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
@@ -35,7 +35,10 @@ func (lb *LoadBalancer) RegisterSatellite(zeroTierIP string) {
 // HandleConnection handles an incoming connection.
 func (lb *LoadBalancer) HandleConnection(conn net.Conn) {
 	logrus.WithField("remote_addr", conn.RemoteAddr().String()).Info("Handling connection")
-	defer conn.Close()
+	defer func() {
+		logrus.WithField("remote_addr", conn.RemoteAddr().String()).Info("Closing connection")
+		conn.Close()
+	}()
 
 	go func() {
 		zeroTierIP, err := lb.NextSatellite()

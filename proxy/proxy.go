@@ -41,6 +41,7 @@ type ConnectionManager struct {
 }
 
 func NewConnectionManager(dialer Dialer) *ConnectionManager {
+	logrus.Info("Creating new ConnectionManager") // Added info print
 	return &ConnectionManager{
 		dialer:    dialer,
 		startTime: time.Now(),
@@ -50,6 +51,7 @@ func NewConnectionManager(dialer Dialer) *ConnectionManager {
 
 // Connect creates a new connection.
 func (m *ConnectionManager) Connect(ctx context.Context, network, address string) (net.Conn, error) {
+	logrus.WithFields(logrus.Fields{"network": network, "address": address}).Info("Connecting...") // Added info print
 	conn, err := m.dialer.Dial(ctx, network, address)
 	if err != nil {
 		atomic.AddInt64(&m.totalFailed, 1)
@@ -79,12 +81,18 @@ func isZeroTierIP(ip string, conn net.Conn) bool {
 
 	// Check if the remote address is a ZeroTier IP or the local IP
 	if zeroTierNet.Contains(net.ParseIP(ip)) || ip == "10.0.127.101" {
+		logrus.WithField("ip", ip).Info("ZeroTier IP detected") // Added info print
 		return true
 	}
 
 	// If not, check if the local address is a ZeroTier IP or the local IP
 	localIP, _, _ := net.SplitHostPort(conn.LocalAddr().String())
-	return zeroTierNet.Contains(net.ParseIP(localIP)) || localIP == "10.0.127.101"
+	if zeroTierNet.Contains(net.ParseIP(localIP)) || localIP == "10.0.127.101" {
+		logrus.WithField("localIP", localIP).Info("Local ZeroTier IP detected") // Added info print
+		return true
+	}
+
+	return false
 }
 
 func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn net.Conn) {
@@ -129,6 +137,7 @@ func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn ne
 
 	// If the data is compressed, create a gzip reader
 	if header[0] == 0x1f && header[1] == 0x8b {
+		logrus.WithField("address", conn.RemoteAddr().String()).Info("Gzip header detected") // Added info print
 		gzipReader, err := gzip.NewReader(reader)
 		if err != nil {
 			atomic.AddInt64(&m.totalFailedConnections, 1)
