@@ -1,7 +1,6 @@
 package server
 
 import (
-	"errors"
 	"github.com/sirupsen/logrus"
 	"io"
 	"net"
@@ -17,7 +16,7 @@ type LoadBalancer struct {
 
 // NewLoadBalancer creates a new LoadBalancer instance.
 func NewLoadBalancer() *LoadBalancer {
-	logrus.Info("Creating new LoadBalancer") // Added info print
+	logrus.Info("Creating new LoadBalancer")
 	return &LoadBalancer{}
 }
 
@@ -27,7 +26,8 @@ func (lb *LoadBalancer) RegisterSatellite(ip string) {
 	defer lb.mu.Unlock()
 	lb.satellites = append(lb.satellites, ip)
 	logrus.WithField("ip", ip).Info("Registered new satellite")
-	time.Sleep(1 * time.Second) // Reduced delay to 1 second
+	logrus.WithField("satellites", lb.satellites).Info("Current satellites") // Print the current list of satellites
+	time.Sleep(1 * time.Second)
 }
 
 // NextSatellite returns the next satellite IP address.
@@ -35,23 +35,25 @@ func (lb *LoadBalancer) NextSatellite() (string, error) {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 
-	if len(lb.satellites) == 0 {
-		err := errors.New("no satellites registered")
-		logrus.Error(err)
-		return "", err
+	// Wait until at least one satellite has been registered
+	for len(lb.satellites) == 0 {
+		lb.mu.Unlock()
+		time.Sleep(1 * time.Second)
+		lb.mu.Lock()
 	}
 
 	ip := lb.satellites[lb.index]
 	lb.index = (lb.index + 1) % len(lb.satellites)
 
-	logrus.WithField("ip", ip).Info("Selected next satellite") // Added info print
+	logrus.WithField("ip", ip).Info("Selected next satellite")
+	logrus.WithField("satellites", lb.satellites).Info("Current satellites") // Print the current list of satellites
 
 	return ip, nil
 }
 
 // HandleConnection handles an incoming connection.
 func (lb *LoadBalancer) HandleConnection(conn net.Conn) {
-	logrus.WithField("remote_addr", conn.RemoteAddr().String()).Info("Handling connection...") // Added info print
+	logrus.WithField("remote_addr", conn.RemoteAddr().String()).Info("Handling connection")
 	defer conn.Close()
 
 	ip, err := lb.NextSatellite()
@@ -79,7 +81,7 @@ func copyData(dst net.Conn, src net.Conn) {
 	logrus.WithFields(logrus.Fields{
 		"dst": dst.RemoteAddr().String(),
 		"src": src.RemoteAddr().String(),
-	}).Info("Copying data...") // Added info print
+	}).Info("Copying data")
 	defer dst.Close()
 	defer src.Close()
 
