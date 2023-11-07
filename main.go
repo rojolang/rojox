@@ -20,13 +20,24 @@ func main() {
 
 	switch {
 	case *clientPtr:
-		client.Run() // Replace with actual function to run client
+		if err := client.Run(); err != nil { // Assuming Run returns an error
+			fmt.Printf("Failed to run client: %v\n", err)
+			os.Exit(1)
+		}
 	case *satellitePtr:
-		satellite.Run() // Replace with actual function to run satellite
+		if err := satellite.Run(); err != nil { // Assuming Run returns an error
+			fmt.Printf("Failed to run satellite: %v\n", err)
+			os.Exit(1)
+		}
 	case *uxPtr:
-		// Change directory to where Prometheus is located
-		os.Chdir("/ux") // Replace with actual path
-		ux.Run()        // Run UX
+		if err := os.Chdir("/ux"); err != nil { // os.Chdir returns an error
+			fmt.Printf("Failed to change directory: %v\n", err)
+			os.Exit(1)
+		}
+		if err := ux.Run(); err != nil { // Assuming Run returns an error
+			fmt.Printf("Failed to run UX: %v\n", err)
+			os.Exit(1)
+		}
 	default:
 		runInteractiveMode()
 	}
@@ -42,7 +53,7 @@ func runInteractiveMode() {
 
 	input, err := reader.ReadString('\n')
 	if err != nil {
-		fmt.Println("Failed to read input:", err)
+		fmt.Printf("Failed to read input: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -50,13 +61,24 @@ func runInteractiveMode() {
 
 	switch input {
 	case "1":
-		client.Run() // Replace with actual function to run client
+		if err := client.Run(); err != nil { // Assuming Run returns an error
+			fmt.Printf("Failed to run client: %v\n", err)
+			os.Exit(1)
+		}
 	case "2":
-		satellite.Run() // Replace with actual function to run satellite
+		if err := satellite.Run(); err != nil { // Assuming Run returns an error
+			fmt.Printf("Failed to run satellite: %v\n", err)
+			os.Exit(1)
+		}
 	case "3":
-		// Change directory to where Prometheus is located
-		os.Chdir("/ux") // Replace with actual path
-		ux.Run()        // Run UX
+		if err := os.Chdir("/ux"); err != nil { // os.Chdir returns an error
+			fmt.Printf("Failed to change directory: %v\n", err)
+			os.Exit(1)
+		}
+		if err := ux.Run(); err != nil { // Assuming Run returns an error
+			fmt.Printf("Failed to run UX: %v\n", err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Println("Invalid option. Please enter 1, 2, or 3.")
 		os.Exit(1)
