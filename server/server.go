@@ -25,6 +25,12 @@ func NewLoadBalancer() *LoadBalancer {
 
 // RegisterSatellite registers a new satellite IP address.
 func (lb *LoadBalancer) RegisterSatellite(zeroTierIP string) {
+	if zeroTierIP == "" {
+		logrus.Error("Cannot register satellite: IP is empty")
+		return
+	}
+
+	logrus.WithField("zeroTierIP", zeroTierIP).Info("Registering satellite") // Log the IP being registered
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
 	lb.wg.Add(1) // Wait for the registration to complete
