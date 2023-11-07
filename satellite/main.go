@@ -66,16 +66,24 @@ func Run() {
 	dialer := &SimpleDialer{}
 	manager := proxy.NewConnectionManager(dialer)
 
-	eth0IP, err := utils.GetEth0IP()
+	// Fetch ZeroTier IP instead of eth0 IP
+	zeroTierIPString, err := getZeroTierIP()
 	if err != nil {
-		logrus.WithFields(logrus.Fields{"context": "getting IP of eth0"}).Fatal(err)
+		logrus.WithFields(logrus.Fields{"context": "getting ZeroTier IP"}).Fatal(err)
+	}
+
+	// Parse the ZeroTier IP string into net.IP type
+	zeroTierIP := net.ParseIP(zeroTierIPString)
+	if zeroTierIP == nil {
+		logrus.WithFields(logrus.Fields{"context": "parsing ZeroTier IP"}).Fatal("Invalid ZeroTier IP")
 	}
 
 	if err := registerWithUXServer(UXServerIP); err != nil {
 		logrus.WithFields(logrus.Fields{"context": "registering with UX server"}).Fatal(err)
 	}
 
-	listener, err := utils.ListenForConnections(socksServer, eth0IP, manager)
+	// Use ZeroTier IP when listening for connections
+	listener, err := utils.ListenForConnections(socksServer, zeroTierIP, manager)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{"context": "listening for connections"}).Fatal(err)
 	}
