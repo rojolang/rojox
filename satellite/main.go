@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-const UXServerIP = "http://35.87.31.126:8080/register"
+const UXServerIP = "http://34.209.231.131:8080/register"
 
 type SimpleDialer struct{}
 

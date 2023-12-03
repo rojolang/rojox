@@ -67,7 +67,7 @@ func GetEth0IP() (net.IP, error) {
 // ListenForConnections starts a goroutine that listens for incoming connections on the specified address.
 // It returns the listener and an error if there was an issue setting it up.
 func ListenForConnections(socksServer *socks5.Server, eth0IP net.IP, manager *proxy.ConnectionManager) (net.Listener, error) {
-	address := fmt.Sprintf("%s:1080", eth0IP.String())
+	address := fmt.Sprintf("%s:9050", eth0IP.String())
 	logrus.Info("Listening for incoming connections on ", address)
 	listener, err := net.Listen("tcp", address)
 	if err != nil {

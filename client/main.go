@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"golang.org/x/net/proxy"
-	"golang.org/x/net/websocket"
 	"io"
 	"net"
 	"net/http"
@@ -13,7 +12,8 @@ import (
 )
 
 const (
-	MaxGoroutines = 10 // Maximum number of goroutines to use for the stress test
+	MaxGoroutines   = 10                   // Maximum number of goroutines to use for the stress test
+	SOCKS5ProxyAddr = "10.243.32.249:9050" // Replace with your satellite's ZeroTier IP and the proxy port
 )
 
 func Run() {
@@ -24,7 +24,7 @@ func Run() {
 			defer wg.Done()
 
 			// Create a SOCKS5 dialer
-			dialer, err := proxy.SOCKS5("tcp", "35.87.31.126:1080", nil, proxy.Direct)
+			dialer, err := proxy.SOCKS5("tcp", SOCKS5ProxyAddr, nil, proxy.Direct)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "can't connect to the proxy:", err)
 				return
@@ -32,7 +32,7 @@ func Run() {
 
 			// Setup HTTP transport
 			httpTransport := &http.Transport{
-				DialContext: func(ctx context.Context, network, addr string) (c net.Conn, err error) {
+				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 					return dialer.Dial(network, addr)
 				},
 			}
@@ -42,15 +42,8 @@ func Run() {
 				Transport: httpTransport,
 			}
 
-			if i < MaxGoroutines/4 {
-				sendHTTPRequest(client, "http://google.com") // HTTP request
-			} else if i < MaxGoroutines/2 {
-				sendHTTPRequest(client, "https://google.com") // HTTPS request
-			} else if i < 3*MaxGoroutines/4 {
-				sendWebSocketRequest() // WebSocket request
-			} else {
-				sendSMTPRequest(dialer) // SMTP request
-			}
+			// Send HTTP request
+			sendHTTPRequest(client, "https://www.google.com") // HTTPS request
 		}(i)
 	}
 	wg.Wait()
@@ -77,60 +70,4 @@ func sendHTTPRequest(client *http.Client, url string) {
 		fmt.Fprintln(os.Stderr, "error reading body:", err)
 		return
 	}
-}
-
-func sendWebSocketRequest() {
-	// Dial WebSocket server
-	conn, err := websocket.Dial("ws://websocket.example.com", "", "http://localhost/")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "can't dial WebSocket server:", err)
-		return
-	}
-	defer conn.Close()
-
-	// Send a basic message
-	err = websocket.Message.Send(conn, "Hello, WebSocket!")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "can't send message:", err)
-		return
-	}
-
-	// Read the response
-	var msg string
-	err = websocket.Message.Receive(conn, &msg)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "can't read response:", err)
-		return
-	}
-
-	// Print the response
-	fmt.Println(msg)
-}
-
-func sendSMTPRequest(dialer proxy.Dialer) {
-	// Dial SMTP server
-	conn, err := dialer.Dial("tcp", "smtp.example.com:25")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "can't dial SMTP server:", err)
-		return
-	}
-	defer conn.Close()
-
-	// Send a basic message
-	_, err = conn.Write([]byte("HELO localhost\r\n"))
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "can't send message:", err)
-		return
-	}
-
-	// Read the response
-	buf := make([]byte, 1024)
-	n, err := conn.Read(buf)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "can't read response:", err)
-		return
-	}
-
-	// Print the response
-	fmt.Println(string(buf[:n]))
 }
