@@ -22,215 +22,58 @@ type Dialer interface {
 type SimpleDialer struct{}
 
 // Dial creates a network connection using the specified network, address, and context.
-// It prefers IPv6 and falls back to IPv4 on the usb0 interface for outgoing connections.
+// It prefers IPv6 and falls back to IPv4 for outgoing connections.
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
 	logrus.Debug("Entering SimpleDialer.Dial method")
 
-	// First, attempt to use IPv6 address of usb0
-	ipv6Addr, err := getUSB0IPv6()
+	// Try to resolve the address to see if it has an IPv6 address.
+	host, port, err := net.SplitHostPort(address)
 	if err != nil {
-		logrus.WithError(err).Debug("Failed to get usb0 IPv6 address, falling back to IPv4")
-	} else {
-		localAddr := &net.TCPAddr{IP: ipv6Addr, Port: 0}
-		dialer := &net.Dialer{
-			LocalAddr: localAddr,
-		}
-		conn, err := dialer.DialContext(ctx, "tcp6", address)
-		if err == nil {
-			logrus.WithFields(logrus.Fields{
-				"localAddr":  conn.LocalAddr().String(),
-				"remoteAddr": conn.RemoteAddr().String(),
-			}).Info("Successfully established connection using usb0 IPv6")
-			return conn, nil
+		logrus.WithError(err).Error("Failed to split network address")
+		return nil, err
+	}
+
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		logrus.WithError(err).Error("Failed to look up IP for host")
+		return nil, err
+	}
+
+	var ipv6Addr net.IP
+	for _, ip := range ips {
+		if ip.To4() == nil && ip.IsGlobalUnicast() {
+			ipv6Addr = ip
+			break
 		}
 	}
 
-	// If IPv6 is not available or dialing failed, fallback to IPv4 address of usb0
-	ipv4Addr, err := getUSB0IPv4()
-	if err != nil {
-		logrus.WithError(err).Error("Failed to get usb0 IPv4 address")
-		return nil, err
+	var dialAddr string
+	if ipv6Addr != nil {
+		// Use the IPv6 address if available.
+		dialAddr = net.JoinHostPort(ipv6Addr.String(), port)
+		network = "tcp6"
+	} else {
+		// Fall back to the original address, which could be IPv4.
+		dialAddr = address
+		network = "tcp4"
 	}
-	localAddr := &net.TCPAddr{IP: ipv4Addr, Port: 0}
-	dialer := &net.Dialer{
-		LocalAddr: localAddr,
-	}
-	conn, err := dialer.DialContext(ctx, "tcp4", address)
+
+	// Create a dialer without specifying LocalAddr to use the system's default routing
+	dialer := &net.Dialer{}
+
+	// Dial out using the system's default routing
+	conn, err := dialer.DialContext(ctx, network, dialAddr)
 	if err != nil {
-		logrus.WithError(err).Error("Failed to dial using usb0 IPv4")
+		logrus.WithError(err).Error("Failed to dial")
 		return nil, err
 	}
 
 	logrus.WithFields(logrus.Fields{
 		"localAddr":  conn.LocalAddr().String(),
 		"remoteAddr": conn.RemoteAddr().String(),
-	}).Info("Successfully established connection using usb0 IPv4")
+	}).Info("Successfully established connection")
 	logrus.Debug("Exiting SimpleDialer.Dial method")
 	return conn, nil
-}
-
-// getUSB0Addresses returns the IPv6 and IPv4 addresses of the usb0 interface.
-func getUSB0Addresses() (ipv6Addr, ipv4Addr net.IP) {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		logrus.WithError(err).Error("Failed to get network interfaces")
-		return nil, nil
-	}
-
-	for _, iface := range ifaces {
-		if iface.Name != "usb0" {
-			continue
-		}
-
-		addrs, err := iface.Addrs()
-		if err != nil {
-			logrus.WithError(err).WithField("interface", iface.Name).Error("Failed to get addresses for interface")
-			return nil, nil
-		}
-
-		for _, addr := range addrs {
-			ipNet, ok := addr.(*net.IPNet)
-			if !ok {
-				continue
-			}
-			ip := ipNet.IP
-			if ip.To4() != nil {
-				ipv4Addr = ip
-			} else if ip.To16() != nil && ip.IsGlobalUnicast() {
-				ipv6Addr = ip
-			}
-		}
-	}
-
-	return ipv6Addr, ipv4Addr
-}
-
-// getUSB0IPv6 retrieves the preferred global unicast IPv6 address of the usb0 interface.
-func getUSB0IPv6() (net.IP, error) {
-	ifaces, err := net.Interfaces()
-	logrus.Debug("Entering getUSB0IPv6 function")
-	if err != nil {
-		logrus.WithError(err).Error("Failed to get network interfaces")
-		return nil, err
-	}
-
-	for _, iface := range ifaces {
-		if iface.Name != "usb0" {
-			continue
-		}
-
-		addrs, err := iface.Addrs()
-		if err != nil {
-			logrus.WithError(err).WithField("interface", iface.Name).Error("Failed to get addresses for interface")
-			return nil, err
-		}
-
-		for _, addr := range addrs {
-			ipNet, ok := addr.(*net.IPNet)
-			if !ok {
-				continue
-			}
-			ip := ipNet.IP
-			if ip.To4() == nil && ip.IsGlobalUnicast() {
-				logrus.WithFields(logrus.Fields{
-					"interface": "usb0",
-					"ipv6":      ip.String(),
-				}).Info("IPv6 address found for usb0")
-				return ip, nil
-			}
-		}
-	}
-	logrus.Debug("Exiting getUSB0IPv6 function")
-	return nil, fmt.Errorf("usb0 interface not found or has no global unicast IPv6 address")
-}
-
-func getUSB0IPv4() (net.IP, error) {
-	ifaces, err := net.Interfaces()
-	logrus.Debug("Entering getUSB0IPv4 function")
-	if err != nil {
-		logrus.WithError(err).Error("Failed to get network interfaces")
-		return nil, err
-	}
-
-	for _, iface := range ifaces {
-		if iface.Name != "usb0" {
-			continue
-		}
-
-		addrs, err := iface.Addrs()
-		if err != nil {
-			logrus.WithError(err).WithField("interface", iface.Name).Error("Failed to get addresses for interface")
-			return nil, err
-		}
-
-		for _, addr := range addrs {
-			ipNet, ok := addr.(*net.IPNet)
-			if !ok {
-				continue
-			}
-			ip := ipNet.IP
-			// Check if the IP is an IPv4 address.
-			if ipv4 := ip.To4(); ipv4 != nil {
-				logrus.WithFields(logrus.Fields{
-					"interface": "usb0",
-					"ipv4":      ipv4.String(),
-				}).Info("IPv4 address found for usb0")
-				return ipv4, nil // Return the IPv4 address.
-			}
-		}
-	}
-	logrus.Debug("Exiting getUSB0IPv4 function")
-	return nil, fmt.Errorf("usb0 interface not found or has no IPv4 address")
-}
-
-// getEth0IP retrieves the IPv6 address of the eth0 interface.
-func getEth0IP() (net.IP, error) {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		logrus.WithError(err).Error("Failed to get network interfaces")
-		return nil, err
-	}
-
-	for _, iface := range ifaces {
-		if iface.Name == "eth0" {
-			addrs, err := iface.Addrs()
-			if err != nil {
-				logrus.WithError(err).WithField("interface", iface.Name).Error("Failed to get addresses for interface")
-				return nil, err
-			}
-
-			for _, addr := range addrs {
-				var ip net.IP
-				switch v := addr.(type) {
-				case *net.IPNet:
-					ip = v.IP
-				case *net.IPAddr:
-					ip = v.IP
-				}
-
-				if ip == nil {
-					continue
-				}
-
-				// Log all addresses for eth0
-				logrus.WithFields(logrus.Fields{
-					"interface": iface.Name,
-					"address":   ip.String(),
-				}).Info("Address found for interface")
-
-				// Check for global unicast IPv6 address
-				if ip.To4() == nil && ip.IsGlobalUnicast() {
-					logrus.WithFields(logrus.Fields{
-						"interface": "eth0",
-						"ipv6":      ip.String(),
-					}).Info("IPv6 address found for eth0")
-					return ip, nil
-				}
-			}
-		}
-	}
-
-	return nil, fmt.Errorf("eth0 interface not found or has no global unicast IPv6 address")
 }
 
 // ConnectionManager manages and monitors network connections.
