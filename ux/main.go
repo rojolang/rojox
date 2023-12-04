@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rojolang/rojox/server"
 	"go.uber.org/zap"
@@ -16,16 +14,6 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
-)
-
-// Define UX server-specific Prometheus metrics.
-var (
-	// Total number of registration requests received.
-	registrationsReceived = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "ux_registrations_received_total",
-		Help: "Total number of registration requests received",
-	})
-	// ... add more metrics as needed ...
 )
 
 type ErrorWithContext struct {
@@ -38,16 +26,14 @@ func (e *ErrorWithContext) Error() string {
 }
 
 // Run starts the UX server with the given LoadBalancer.
-// Run starts the UX server with the given LoadBalancer.
 func Run(lb *server.LoadBalancer) {
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 
 	// Set up the registration handler.
 	http.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
-		// Increment Prometheus counter for registration requests.
-		registrationsReceived.Inc()
 		registerHandler(logger, w, r, lb) // Pass the LoadBalancer instance to the handler
+		// Increment Prometheus counter for registration requests here if needed
 	})
 
 	// Start the HTTP server on a separate port for registration and metrics.
@@ -55,9 +41,6 @@ func Run(lb *server.LoadBalancer) {
 
 	// Start listening for SOCKS connections on port 9050.
 	go startListener(":9050", lb, logger)
-
-	// Set up the Prometheus metrics endpoint.
-	http.Handle("/metrics", promhttp.Handler())
 
 	// Wait for termination signals and pass the httpServer to handleTerminationSignals.
 	handleTerminationSignals(httpServer, logger)
