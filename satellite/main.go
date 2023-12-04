@@ -27,8 +27,8 @@ type SimpleDialer struct{}
 
 // Dial dials out using the satellite's global unicast IPv6 address.
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
+	logrus.Debug("Satellite SimpleDialer.Dial method started")
 	ipv6Addr, err := getIPv6Address()
-	logrus.Printf("satellite dialer started")
 	if err != nil {
 		logrus.WithError(err).Error("Failed to get IPv6 address for outbound connections")
 		return nil, err
@@ -43,7 +43,7 @@ func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.C
 		"localIPv6": ipv6Addr,
 		"network":   network,
 		"address":   address,
-	}).Info("Dialing out using IPv6")
+	}).Info("Satellite is dialing out using IPv6")
 
 	conn, err := dialer.DialContext(ctx, network, address)
 	if err != nil {
@@ -56,11 +56,12 @@ func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.C
 		"localPort":  conn.LocalAddr().(*net.TCPAddr).Port,
 		"remoteAddr": conn.RemoteAddr().String(),
 	}).Info("Successfully dialed using IPv6")
-
+	logrus.Debug("Satellite SimpleDialer.Dial method finished")
 	return conn, nil
 }
 
 func getZeroTierIP() (string, error) {
+	logrus.Debug("Satellite getZeroTierIP function started")
 	cmd := exec.Command("zerotier-cli", "listnetworks")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -87,14 +88,15 @@ func getZeroTierIP() (string, error) {
 			return ip, nil
 		}
 	}
-
+	logrus.Debug("Satellite getZeroTierIP function finished")
 	return "", errors.New("ZeroTier IP not found")
 }
 
 func Run() {
+	logrus.Debug("Satellite Run function started")
 	logrus.SetLevel(logrus.DebugLevel)
 	logrus.SetOutput(os.Stdout)
-	logrus.Info("Starting main function")
+	logrus.Info("Starting satellite main function")
 
 	socksServer, err := utils.SetupSocks5Server()
 	if err != nil {
@@ -156,9 +158,11 @@ func Run() {
 	if err := httpServer.Shutdown(context.Background()); err != nil {
 		logrus.WithFields(logrus.Fields{"context": "shutting down HTTP server"}).Error(err)
 	}
+	logrus.Debug("Satellite Run function finished")
 }
 
 func handleTerminationSignals(httpServer *http.Server, listener net.Listener) {
+	logrus.Debug("Satellite handleTerminationSignals function started")
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 
@@ -175,9 +179,11 @@ func handleTerminationSignals(httpServer *http.Server, listener net.Listener) {
 			logrus.WithFields(logrus.Fields{"context": "closing SOCKS5 server listener"}).Error(err)
 		}
 	}()
+	logrus.Debug("Satellite handleTerminationSignals function finished")
 }
 
 func registerWithUXServer(uxServerIP string) error {
+	logrus.Debug("Satellite registerWithUXServer function started")
 	for i := 0; i < 3; i++ {
 		ip, err := getZeroTierIP()
 		if err != nil {
@@ -224,12 +230,13 @@ func registerWithUXServer(uxServerIP string) error {
 		logrus.Info("Successfully registered with UX server")
 		return nil
 	}
-
+	logrus.Debug("Satellite registerWithUXServer function finished")
 	return fmt.Errorf("registration failed after 3 attempts")
 }
 
 // getIPv6Address retrieves the preferred global unicast IPv6 address of the system.
 func getIPv6Address() (net.IP, error) {
+	logrus.Debug("Satellite getIPv6Address function started")
 	logrus.Info("Retrieving global unicast IPv6 address for usb0")
 	iface, err := net.InterfaceByName("usb0")
 	if err != nil {
@@ -255,6 +262,6 @@ func getIPv6Address() (net.IP, error) {
 			return ip, nil
 		}
 	}
-
+	logrus.Debug("Satellite getIPv6Address function finished")
 	return nil, errors.New("usb0 interface has no global unicast IPv6 address")
 }

@@ -28,7 +28,7 @@ type SimpleDialer struct{}
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
 	var localAddr net.Addr
 	var err error
-	logrus.Printf("regularproxy dialer started")
+	logrus.Debug("Entering SimpleDialer.Dial method")
 	// Determine if we need an IPv4 or IPv6 address based on the network type
 	if network == "tcp4" {
 		ip, err := getUSB0IPv4()
@@ -68,13 +68,14 @@ func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.C
 		"localAddr":  conn.LocalAddr().String(),
 		"remoteAddr": conn.RemoteAddr().String(),
 	}).Info("Successfully established connection using usb0")
-
+	logrus.Debug("Exiting SimpleDialer.Dial method")
 	return conn, nil
 }
 
 // getUSB0IPv6 retrieves the preferred global unicast IPv6 address of the usb0 interface.
 func getUSB0IPv6() (net.IP, error) {
 	ifaces, err := net.Interfaces()
+	logrus.Debug("Entering getUSB0IPv6 function")
 	if err != nil {
 		logrus.WithError(err).Error("Failed to get network interfaces")
 		return nil, err
@@ -106,12 +107,13 @@ func getUSB0IPv6() (net.IP, error) {
 			}
 		}
 	}
-
+	logrus.Debug("Exiting getUSB0IPv6 function")
 	return nil, fmt.Errorf("usb0 interface not found or has no global unicast IPv6 address")
 }
 
 func getUSB0IPv4() (net.IP, error) {
 	ifaces, err := net.Interfaces()
+	logrus.Debug("Entering getUSB0IPv4 function")
 	if err != nil {
 		logrus.WithError(err).Error("Failed to get network interfaces")
 		return nil, err
@@ -144,7 +146,7 @@ func getUSB0IPv4() (net.IP, error) {
 			}
 		}
 	}
-
+	logrus.Debug("Exiting getUSB0IPv4 function")
 	return nil, fmt.Errorf("usb0 interface not found or has no IPv4 address")
 }
 
@@ -226,6 +228,7 @@ func NewConnectionManager(dialer Dialer) *ConnectionManager {
 // Connect establishes a new network connection using the provided network and address.
 func (m *ConnectionManager) Connect(ctx context.Context, network, address string) (net.Conn, error) {
 	logrus.WithFields(logrus.Fields{"network": network, "address": address}).Info("Connecting...")
+	logrus.Debug("Entering ConnectionManager.Connect method")
 	conn, err := m.dialer.Dial(ctx, network, address)
 	if err != nil {
 		atomic.AddInt64(&m.totalFailed, 1)
@@ -245,7 +248,7 @@ func (m *ConnectionManager) Connect(ctx context.Context, network, address string
 		"network": network,
 		"address": address,
 	}).Info("Successfully created connection")
-
+	logrus.Debug("Exiting ConnectionManager.Connect method")
 	return conn, nil
 }
 
@@ -274,7 +277,7 @@ func isZeroTierIP(ip string, conn net.Conn) bool {
 // HandleConnection processes the incoming connection using the provided SOCKS5 server.
 func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn net.Conn) {
 	defer m.Close(conn)
-
+	logrus.Debug("Entering ConnectionManager.HandleConnection method")
 	ip, _, err := net.SplitHostPort(conn.RemoteAddr().String())
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -347,6 +350,7 @@ func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn ne
 			"remote_addr": conn.RemoteAddr().String(),
 		}).Info("Successfully served connection")
 	}
+	logrus.Debug("Exiting ConnectionManager.HandleConnection method")
 }
 
 // GetMaxConcurrentConnections returns the maximum number of concurrent connections that have been active at the same time.
