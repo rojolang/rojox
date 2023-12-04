@@ -6,7 +6,6 @@ import (
 	"go.uber.org/zap"
 	"io"
 	"net"
-	"net/http"
 	"sync"
 	"time"
 )
@@ -69,6 +68,7 @@ func (lb *LoadBalancer) RegisterSatellite(zeroTierIP string) {
 
 // performHealthChecks runs health checks on all satellites concurrently.
 // performHealthChecks runs health checks on all satellites concurrently.
+// performHealthChecks runs health checks on all satellites concurrently.
 func (lb *LoadBalancer) performHealthChecks() {
 	lb.mu.RLock()
 	satellites := make([]*SatelliteStatus, len(lb.satellites))
@@ -80,22 +80,33 @@ func (lb *LoadBalancer) performHealthChecks() {
 		wg.Add(1)
 		go func(sat *SatelliteStatus) {
 			defer wg.Done()
-			// Replace with actual health check logic (e.g., TCP ping or endpoint check)
-			resp, err := http.Get("https://api.ipify.org")
-			lb.mu.Lock() // Lock when modifying the satellite's data
-			defer lb.mu.Unlock()
-			if err != nil || resp.StatusCode != http.StatusOK {
+			// Log the start of the health check for the satellite.
+			lb.logger.Info("Starting health check for satellite", zap.String("zeroTierIP", sat.IP))
+
+			// Attempt a TCP connection to the satellite's service port.
+			conn, err := net.DialTimeout("tcp", sat.IP+":9050", 5*time.Second)
+			if err != nil {
+				lb.mu.Lock()
 				sat.Healthy = false
-				lb.logger.Error("Health check failed", zap.String("zeroTierIP", sat.IP), zap.Error(err))
-				if resp != nil {
-					resp.Body.Close()
-				}
+				lb.mu.Unlock()
+				lb.logger.Error("Health check failed: Unable to dial satellite",
+					zap.String("zeroTierIP", sat.IP),
+					zap.Error(err))
 				return
 			}
-			resp.Body.Close()
-			// If the response is successful, mark the satellite as healthy
+			lb.logger.Info("Successfully connected to satellite for health check",
+				zap.String("zeroTierIP", sat.IP),
+				zap.String("localAddr", conn.LocalAddr().String()),
+				zap.String("remoteAddr", conn.RemoteAddr().String()))
+			conn.Close() // Close the connection immediately after establishing it.
+
+			// Optionally, perform additional checks here if needed.
+
+			// Log the successful health check.
+			lb.mu.Lock()
 			sat.Healthy = true
 			sat.LastHealthCheck = time.Now()
+			lb.mu.Unlock()
 			lb.logger.Info("Health check passed", zap.String("zeroTierIP", sat.IP))
 		}(satellite)
 	}
