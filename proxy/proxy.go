@@ -22,49 +22,56 @@ type Dialer interface {
 type SimpleDialer struct{}
 
 // Dial creates a network connection using the specified network, address, and context.
-// It prefers IPv6 and falls back to IPv4 on the usb0 interface for outgoing connections.
+// It prefers IPv6 and falls back to IPv4 for outgoing connections.
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
 	logrus.Debug("Entering SimpleDialer.Dial method")
 
-	// First, attempt to use IPv6 address of usb0
-	ipv6Addr, err := getUSB0IPv6()
+	// Try to resolve the address to see if it has an IPv6 address.
+	host, port, err := net.SplitHostPort(address)
 	if err != nil {
-		logrus.WithError(err).Debug("Failed to get usb0 IPv6 address, falling back to IPv4")
-	} else {
-		localAddr := &net.TCPAddr{IP: ipv6Addr, Port: 0}
-		dialer := &net.Dialer{
-			LocalAddr: localAddr,
-		}
-		conn, err := dialer.DialContext(ctx, "tcp6", address)
-		if err == nil {
-			logrus.WithFields(logrus.Fields{
-				"localAddr":  conn.LocalAddr().String(),
-				"remoteAddr": conn.RemoteAddr().String(),
-			}).Info("Successfully established connection using usb0 IPv6")
-			return conn, nil
+		logrus.WithError(err).Error("Failed to split network address")
+		return nil, err
+	}
+
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		logrus.WithError(err).Error("Failed to look up IP for host")
+		return nil, err
+	}
+
+	var ipv6Addr net.IP
+	for _, ip := range ips {
+		if ip.To4() == nil && ip.IsGlobalUnicast() {
+			ipv6Addr = ip
+			break
 		}
 	}
 
-	// If IPv6 is not available or dialing failed, fallback to IPv4 address of usb0
-	ipv4Addr, err := getUSB0IPv4()
-	if err != nil {
-		logrus.WithError(err).Error("Failed to get usb0 IPv4 address")
-		return nil, err
+	var dialAddr string
+	if ipv6Addr != nil {
+		// Use the IPv6 address if available.
+		dialAddr = net.JoinHostPort(ipv6Addr.String(), port)
+		network = "tcp6"
+	} else {
+		// Fall back to the original address, which could be IPv4.
+		dialAddr = address
+		network = "tcp4"
 	}
-	localAddr := &net.TCPAddr{IP: ipv4Addr, Port: 0}
-	dialer := &net.Dialer{
-		LocalAddr: localAddr,
-	}
-	conn, err := dialer.DialContext(ctx, "tcp4", address)
+
+	// Create a dialer without specifying LocalAddr to use the system's default routing
+	dialer := &net.Dialer{}
+
+	// Dial out using the system's default routing
+	conn, err := dialer.DialContext(ctx, network, dialAddr)
 	if err != nil {
-		logrus.WithError(err).Error("Failed to dial using usb0 IPv4")
+		logrus.WithError(err).Error("Failed to dial")
 		return nil, err
 	}
 
 	logrus.WithFields(logrus.Fields{
 		"localAddr":  conn.LocalAddr().String(),
 		"remoteAddr": conn.RemoteAddr().String(),
-	}).Info("Successfully established connection using usb0 IPv4")
+	}).Info("Successfully established connection")
 	logrus.Debug("Exiting SimpleDialer.Dial method")
 	return conn, nil
 }
