@@ -237,5 +237,3 @@ func registerWithUXServer(uxServerIP, zeroTierIP string, logger *zap.Logger) err
 	logger.Debug("Satellite registerWithUXServer function finished")
 	return fmt.Errorf("registration failed after 3 attempts")
 }
-
-// httpHandler wraps the provided logger into the server's main handler.

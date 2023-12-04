@@ -91,16 +91,6 @@ type ConnectionManager struct {
 	connMutex                  sync.Mutex
 }
 
-// NewConnectionManager creates a new ConnectionManager with the provided Dialer.
-func NewConnectionManager(dialer Dialer) *ConnectionManager {
-	logrus.Info("Creating new ConnectionManager")
-	return &ConnectionManager{
-		dialer:    dialer,
-		startTime: time.Now(),
-		conns:     make(map[string]net.Conn),
-	}
-}
-
 // Connect establishes a new network connection using the provided network and address.
 func (m *ConnectionManager) Connect(ctx context.Context, network, address string) (net.Conn, error) {
 	logrus.WithFields(logrus.Fields{"network": network, "address": address}).Info("Connecting...")
@@ -150,9 +140,22 @@ func isZeroTierIP(ip string, conn net.Conn) bool {
 	return false
 }
 
+// NewConnectionManager creates a new ConnectionManager with the provided Dialer.
+func NewConnectionManager(dialer Dialer) *ConnectionManager {
+	logrus.Info("Creating new ConnectionManager")
+	return &ConnectionManager{
+		dialer:    dialer,
+		startTime: time.Now(),
+		conns:     make(map[string]net.Conn),
+	}
+}
+
+// HandleConnection processes an accepted connection using the provided SOCKS5 server.
 func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn net.Conn) {
 	defer m.Close(conn)
 	logrus.Debug("Entering ConnectionManager.HandleConnection method")
+
+	// Extract the remote IP address from the connection.
 	ip, _, err := net.SplitHostPort(conn.RemoteAddr().String())
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -163,6 +166,7 @@ func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn ne
 		return
 	}
 
+	// Check if the remote IP is a valid ZeroTier IP.
 	if !isZeroTierIP(ip, conn) {
 		logrus.WithFields(logrus.Fields{
 			"event":       "rejected_non_zerotier_ip",
@@ -178,9 +182,7 @@ func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn ne
 		"zerotier_ip": ip,
 	}).Info("Accepted connection from ZeroTier IP")
 
-	// The socksServer.ServeConn method will handle the SOCKS5 protocol negotiation,
-	// including forwarding the connection to the requested destination.
-	// Ensure that the socksServer is configured to use our SimpleDialer for outbound connections.
+	// Serve the connection using the provided SOCKS5 server.
 	if err := socksServer.ServeConn(conn); err != nil {
 		atomic.AddInt64(&m.totalFailedConnections, 1)
 		logrus.WithFields(logrus.Fields{
@@ -198,6 +200,22 @@ func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn ne
 		}).Info("Successfully served connection")
 	}
 	logrus.Debug("Exiting ConnectionManager.HandleConnection method")
+}
+
+// Close terminates the given network connection and removes it from the manager's tracking.
+func (m *ConnectionManager) Close(conn net.Conn) {
+	m.connMutex.Lock()
+	defer m.connMutex.Unlock()
+
+	addr := conn.RemoteAddr().String()
+	if _, ok := m.conns[addr]; ok {
+		if err := conn.Close(); err != nil {
+			logrus.WithField("address", addr).Error("Failed to close connection")
+		} else {
+			logrus.WithField("address", addr).Info("Successfully closed connection")
+			delete(m.conns, addr)
+		}
+	}
 }
 
 // GetMaxConcurrentConnections returns the maximum number of concurrent connections that have been active at the same time.
@@ -249,22 +267,6 @@ func (m *ConnectionManager) GetUptime() time.Duration {
 	uptime := time.Since(m.startTime)
 	logrus.WithField("uptime", uptime).Debug("Retrieved uptime of the ConnectionManager")
 	return uptime
-}
-
-// Close terminates the given network connection and removes it from the manager's tracking.
-func (m *ConnectionManager) Close(conn net.Conn) {
-	m.connMutex.Lock()
-	defer m.connMutex.Unlock()
-
-	addr := conn.RemoteAddr().String()
-	if _, ok := m.conns[addr]; ok {
-		if err := conn.Close(); err != nil {
-			logrus.WithField("address", addr).Error("Failed to close connection")
-		} else {
-			logrus.WithField("address", addr).Debug("Successfully closed connection")
-			delete(m.conns, addr)
-		}
-	}
 }
 
 // GetTotalFailedConnections returns the total number of connections that have failed after being accepted.
