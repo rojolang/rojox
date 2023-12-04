@@ -2,8 +2,6 @@
 package proxy
 
 import (
-	"bufio"
-	"compress/gzip"
 	"context"
 	"fmt"
 	"github.com/armon/go-socks5"
@@ -24,28 +22,27 @@ type Dialer interface {
 type SimpleDialer struct{}
 
 // Dial creates a network connection using the specified network, address, and context.
-// It binds to the local address of the usb0 interface for outgoing connections.
+// It prefers IPv6 and falls back to IPv4 on the usb0 interface for outgoing connections.
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
+	logrus.Debug("Entering SimpleDialer.Dial method")
 	var localAddr net.Addr
 	var err error
-	logrus.Debug("Entering SimpleDialer.Dial method")
-	// Determine if we need an IPv4 or IPv6 address based on the network type
-	if network == "tcp4" {
-		ip, err := getUSB0IPv4()
+
+	// First, attempt to use IPv6 address of usb0
+	ip, err := getUSB0IPv6()
+	if err == nil {
+		localAddr = &net.TCPAddr{IP: ip, Port: 0} // Port 0 means any available port
+		network = "tcp6"                          // Force IPv6
+	} else {
+		logrus.WithError(err).Debug("Failed to get usb0 IPv6 address, falling back to IPv4")
+		// If IPv6 is not available, fallback to IPv4 address of usb0
+		ip, err = getUSB0IPv4()
 		if err != nil {
 			logrus.WithError(err).Error("Failed to get usb0 IPv4 address")
 			return nil, err
 		}
-		localAddr = &net.TCPAddr{IP: ip, Port: 0} // Port 0 means any available port
-	} else if network == "tcp6" {
-		ip, err := getUSB0IPv6()
-		if err != nil {
-			logrus.WithError(err).Error("Failed to get usb0 IPv6 address")
-			return nil, err
-		}
-		localAddr = &net.TCPAddr{IP: ip, Port: 0} // Port 0 means any available port
-	} else {
-		return nil, fmt.Errorf("unsupported network type: %s", network)
+		localAddr = &net.TCPAddr{IP: ip, Port: 0}
+		network = "tcp4" // Force IPv4
 	}
 
 	dialer := &net.Dialer{
@@ -274,7 +271,6 @@ func isZeroTierIP(ip string, conn net.Conn) bool {
 	return false
 }
 
-// HandleConnection processes the incoming connection using the provided SOCKS5 server.
 func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn net.Conn) {
 	defer m.Close(conn)
 	logrus.Debug("Entering ConnectionManager.HandleConnection method")
@@ -303,38 +299,9 @@ func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn ne
 		"zerotier_ip": ip,
 	}).Info("Accepted connection from ZeroTier IP")
 
-	reader := bufio.NewReader(conn)
-
-	header, err := reader.Peek(2)
-	if err != nil && err != io.EOF {
-		logrus.WithFields(logrus.Fields{
-			"event":       "peek_header_error",
-			"local_addr":  conn.LocalAddr().String(),
-			"remote_addr": conn.RemoteAddr().String(),
-		}).Error("Failed to peek header")
-		return
-	}
-
-	if len(header) == 2 && header[0] == 0x1f && header[1] == 0x8b {
-		logrus.WithField("remote_addr", conn.RemoteAddr().String()).Info("Gzip header detected, creating gzip reader")
-
-		gzipReader, err := gzip.NewReader(reader)
-		if err != nil {
-			atomic.AddInt64(&m.totalFailedConnections, 1)
-			logrus.WithFields(logrus.Fields{
-				"event":       "gzip_reader_error",
-				"local_addr":  conn.LocalAddr().String(),
-				"remote_addr": conn.RemoteAddr().String(),
-			}).Error("Failed to create gzip reader")
-			return
-		}
-		defer gzipReader.Close()
-		reader = bufio.NewReader(gzipReader)
-	}
-
-	connWithReader := &connWithReader{Conn: conn, reader: reader}
-
-	if err := socksServer.ServeConn(connWithReader); err != nil {
+	// The socksServer.ServeConn method will handle the SOCKS5 protocol negotiation,
+	// including forwarding the connection to the requested destination.
+	if err := socksServer.ServeConn(conn); err != nil {
 		atomic.AddInt64(&m.totalFailedConnections, 1)
 		logrus.WithFields(logrus.Fields{
 			"event":       "serve_connection_error",
