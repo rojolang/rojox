@@ -204,9 +204,8 @@ func (lb *LoadBalancer) HandleConnection(conn net.Conn) {
 }
 
 // handleSingleConnection handles a single connection from the buffered channel.
-// handleSingleConnection handles a single connection from the buffered channel.
-func (lb *LoadBalancer) handleSingleConnection(conn net.Conn) {
-	defer conn.Close()
+func (lb *LoadBalancer) handleSingleConnection(clientConn net.Conn) {
+	defer clientConn.Close()
 
 	satellite, err := lb.NextSatellite()
 	if err != nil {
@@ -232,25 +231,16 @@ func (lb *LoadBalancer) handleSingleConnection(conn net.Conn) {
 		lb.mu.Unlock()
 	}()
 
-	go copyData(satelliteConn, conn, lb.logger)
-	go copyData(conn, satelliteConn, lb.logger)
+	// Start the bidirectional copy between client and satellite.
+	go copyData(satelliteConn, clientConn, lb.logger)
+	go copyData(clientConn, satelliteConn, lb.logger)
 }
 
-// copyData copies data between two connections and logs errors if they occur.
+// copyData copies data between two connections.
 func copyData(dst net.Conn, src net.Conn, logger *zap.Logger) {
-	// Use io.Copy to copy the data from src to dst.
 	_, err := io.Copy(dst, src)
 	if err != nil {
-		// Log the error if the copy operation fails.
 		logger.Error("Failed to copy data between connections", zap.Error(err))
 	}
-
-	// Close the source and destination connections.
-	// We check if the error from closing is nil before logging it.
-	if err := src.Close(); err != nil {
-		logger.Error("Failed to close source connection", zap.Error(err))
-	}
-	if err := dst.Close(); err != nil {
-		logger.Error("Failed to close destination connection", zap.Error(err))
-	}
+	// Do not close the connections here. They should remain open to allow for a full duplex conversation.
 }
