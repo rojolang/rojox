@@ -7,6 +7,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rojolang/rojox/proxy"
+	"github.com/rojolang/rojox/stats"
+	"github.com/rojolang/rojox/utils"
 	"io"
 	"net"
 	"net/http"
@@ -17,10 +21,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/rojolang/rojox/proxy"
-	"github.com/rojolang/rojox/stats"
-	"github.com/rojolang/rojox/utils"
 	"go.uber.org/zap"
 )
 
@@ -67,34 +67,6 @@ func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.C
 	return conn, nil
 }
 
-func getZeroTierIP(logger *zap.Logger) (string, error) {
-	cmd := exec.Command("zerotier-cli", "listnetworks")
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-	if err != nil {
-		logger.Error("Failed to execute zerotier-cli command", zap.Error(err))
-		return "", err
-	}
-
-	output := stdout.String()
-	lines := strings.Split(output, "\n")
-
-	for _, line := range lines {
-		fields := strings.Fields(line)
-		if len(fields) > 8 && fields[2] == "fada62b0151e0f56" {
-			ipWithMask := fields[8]
-			ip := strings.Split(ipWithMask, "/")[0]
-			return ip, nil
-		}
-	}
-
-	logger.Error("ZeroTier IP not found")
-	return "", errors.New("ZeroTier IP not found")
-}
-
 func Run() {
 	logger, _ := zap.NewProduction()
 	defer func(logger *zap.Logger) {
@@ -127,9 +99,12 @@ func Run() {
 		logger.Fatal("Failed to listen for connections", zap.Error(err))
 	}
 
+	mux := http.NewServeMux()
+	mux.Handle("/metrics-satellite", promhttp.Handler())
+
 	httpServer := &http.Server{
 		Addr:         ":8080",
-		Handler:      bufioHandler(promhttp.Handler(), logger),
+		Handler:      mux,
 		ReadTimeout:  readTimeout,
 		WriteTimeout: writeTimeout,
 	}
@@ -144,6 +119,34 @@ func Run() {
 	handleTerminationSignals(httpServer, listener, logger)
 }
 
+func getZeroTierIP(logger *zap.Logger) (string, error) {
+	cmd := exec.Command("zerotier-cli", "listnetworks")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		logger.Error("Failed to execute zerotier-cli command", zap.Error(err))
+		return "", err
+	}
+
+	output := stdout.String()
+	lines := strings.Split(output, "\n")
+
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) > 8 && fields[2] == "fada62b0151e0f56" {
+			ipWithMask := fields[8]
+			ip := strings.Split(ipWithMask, "/")[0]
+			return ip, nil
+		}
+	}
+
+	logger.Error("ZeroTier IP not found")
+	return "", errors.New("ZeroTier IP not found")
+}
+
 // BufioResponseWriter embeds http.ResponseWriter and a bufio.Writer to enable buffered writing.
 type BufioResponseWriter struct {
 	http.ResponseWriter
@@ -152,14 +155,6 @@ type BufioResponseWriter struct {
 }
 
 // NewBufioResponseWriter creates a new BufioResponseWriter with the provided http.ResponseWriter and logger.
-func NewBufioResponseWriter(w http.ResponseWriter, logger *zap.Logger) *BufioResponseWriter {
-	return &BufioResponseWriter{
-		ResponseWriter: w,
-		writer:         bufio.NewWriter(w),
-		logger:         logger,
-	}
-}
-
 // Write uses the bufio.Writer to write.
 func (b *BufioResponseWriter) Write(data []byte) (int, error) {
 	return b.writer.Write(data)
@@ -170,16 +165,6 @@ func (b *BufioResponseWriter) Flush() {
 	if err := b.writer.Flush(); err != nil {
 		b.logger.Error("Failed to flush buffered writer", zap.Error(err))
 	}
-}
-
-// bufioHandler wraps an HTTP handler to provide buffered writing for responses.
-func bufioHandler(h http.Handler, logger *zap.Logger) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		bwResponseWriter := NewBufioResponseWriter(w, logger)
-		defer bwResponseWriter.Flush()
-
-		h.ServeHTTP(bwResponseWriter, r)
-	})
 }
 
 func handleTerminationSignals(httpServer *http.Server, listener net.Listener, logger *zap.Logger) {
@@ -220,7 +205,8 @@ func registerWithUXServer(uxServerIP, zeroTierIP string, logger *zap.Logger) err
 		}
 		req.Header.Set("Content-Type", "application/json")
 
-		logger.Info("Sending registration request", zap.Any("request", req))
+		// Corrected logging to avoid logging the entire request object
+		logger.Info("Sending registration request", zap.String("url", req.URL.String()))
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -235,7 +221,8 @@ func registerWithUXServer(uxServerIP, zeroTierIP string, logger *zap.Logger) err
 			}
 		}(resp.Body)
 
-		logger.Info("Received registration response", zap.Any("response", resp))
+		// Corrected logging to avoid logging the entire response object
+		logger.Info("Received registration response", zap.Int("statusCode", resp.StatusCode))
 
 		if resp.StatusCode != http.StatusOK {
 			err = fmt.Errorf("registration failed: status code %d", resp.StatusCode)
@@ -250,3 +237,5 @@ func registerWithUXServer(uxServerIP, zeroTierIP string, logger *zap.Logger) err
 	logger.Debug("Satellite registerWithUXServer function finished")
 	return fmt.Errorf("registration failed after 3 attempts")
 }
+
+// httpHandler wraps the provided logger into the server's main handler.
