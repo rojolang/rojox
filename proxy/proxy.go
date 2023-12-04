@@ -15,17 +15,62 @@ import (
 	"time"
 )
 
+// Dialer defines the interface for network dialing.
 type Dialer interface {
 	Dial(ctx context.Context, network, address string) (net.Conn, error)
 }
 
+// SimpleDialer implements the Dialer interface, providing methods to dial network connections.
 type SimpleDialer struct{}
 
+// Dial creates a network connection using the specified network, address, and context.
+// It binds to the local address of the eth0 interface for outgoing connections.
+// Dial creates a network connection using the specified network, address, and context.
+// It binds to the local address of the eth0 interface for outgoing connections.
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
-	logrus.WithFields(logrus.Fields{"network": network, "address": address}).Info("Dialing...") // Added info print
-	return net.Dial(network, address)
+	localAddr, err := getEth0IP()
+	if err != nil {
+		logrus.WithError(err).Error("Failed to get eth0 IP address")
+		return nil, err
+	}
+
+	dialer := net.Dialer{
+		LocalAddr: localAddr,
+		Timeout:   30 * time.Second,
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"network":   network,
+		"address":   address,
+		"localAddr": localAddr,
+	}).Info("Dialing with local address")
+
+	return dialer.DialContext(ctx, network, address)
 }
 
+// getEth0IP retrieves the first IPv4 address of the eth0 interface.
+func getEth0IP() (net.Addr, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+	for _, iface := range ifaces {
+		if iface.Name == "eth0" {
+			addrs, err := iface.Addrs()
+			if err != nil {
+				return nil, err
+			}
+			for _, addr := range addrs {
+				if ipnet, ok := addr.(*net.IPNet); ok && ipnet.IP.To4() != nil {
+					return &net.TCPAddr{IP: ipnet.IP, Port: 0}, nil
+				}
+			}
+		}
+	}
+	return nil, fmt.Errorf("eth0 interface not found or has no IPv4 address")
+}
+
+// ConnectionManager manages and monitors network connections.
 type ConnectionManager struct {
 	dialer                     Dialer
 	totalRequests              int64
@@ -40,8 +85,9 @@ type ConnectionManager struct {
 	connMutex                  sync.Mutex
 }
 
+// NewConnectionManager creates a new ConnectionManager with the provided Dialer.
 func NewConnectionManager(dialer Dialer) *ConnectionManager {
-	logrus.Info("Creating new ConnectionManager") // Added info print
+	logrus.Info("Creating new ConnectionManager")
 	return &ConnectionManager{
 		dialer:    dialer,
 		startTime: time.Now(),
@@ -49,16 +95,16 @@ func NewConnectionManager(dialer Dialer) *ConnectionManager {
 	}
 }
 
-// Connect creates a new connection.
+// Connect establishes a new network connection using the provided network and address.
 func (m *ConnectionManager) Connect(ctx context.Context, network, address string) (net.Conn, error) {
-	logrus.WithFields(logrus.Fields{"network": network, "address": address}).Info("Connecting...") // Added info print
+	logrus.WithFields(logrus.Fields{"network": network, "address": address}).Info("Connecting...")
 	conn, err := m.dialer.Dial(ctx, network, address)
 	if err != nil {
 		atomic.AddInt64(&m.totalFailed, 1)
 		logrus.WithFields(logrus.Fields{
 			"network": network,
 			"address": address,
-		}).Errorf("Failed to create connection: %v", err)
+		}).Error("Failed to create connection")
 		return nil, fmt.Errorf("failed to create connection: %w", err)
 	}
 
@@ -77,42 +123,42 @@ func (m *ConnectionManager) Connect(ctx context.Context, network, address string
 
 // isZeroTierIP checks if the given IP address belongs to the ZeroTier network or is the local IP.
 func isZeroTierIP(ip string, conn net.Conn) bool {
-	_, zeroTierNet, _ := net.ParseCIDR("10.243.0.0/16") // replace with the actual IP range of your ZeroTier network
+	// This example assumes that the ZeroTier network uses the 10.243.0.0/16 range.
+	// Replace with the actual IP range of your ZeroTier network.
+	_, zeroTierNet, _ := net.ParseCIDR("10.243.0.0/16")
 
-	// Check if the remote address is a ZeroTier IP or the local IP
+	// Check if the remote address is a ZeroTier IP or the local IP.
 	if zeroTierNet.Contains(net.ParseIP(ip)) || ip == "10.0.127.101" {
-		logrus.WithField("ip", ip).Info("ZeroTier IP detected") // Added info print
+		logrus.WithField("ip", ip).Info("ZeroTier IP detected")
 		return true
 	}
 
-	// If not, check if the local address is a ZeroTier IP or the local IP
+	// If not, check if the local address is a ZeroTier IP or the local IP.
 	localIP, _, _ := net.SplitHostPort(conn.LocalAddr().String())
 	if zeroTierNet.Contains(net.ParseIP(localIP)) || localIP == "10.0.127.101" {
-		logrus.WithField("localIP", localIP).Info("Local ZeroTier IP detected") // Added info print
+		logrus.WithField("localIP", localIP).Info("Local ZeroTier IP detected")
 		return true
 	}
 
 	return false
 }
 
+// HandleConnection processes the incoming connection using the provided SOCKS5 server.
 func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn net.Conn) {
-	defer m.Close(conn) // Ensure the connection is closed when the goroutine exits
+	defer m.Close(conn)
 
 	ip, _, err := net.SplitHostPort(conn.RemoteAddr().String())
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
-			"context":     "HandleConnection",
 			"event":       "split_host_port_error",
 			"local_addr":  conn.LocalAddr().String(),
 			"remote_addr": conn.RemoteAddr().String(),
-		}).Error("Failed to split host port: ", err)
+		}).Error("Failed to split host port")
 		return
 	}
 
 	if !isZeroTierIP(ip, conn) {
-		// If it's not a ZeroTier IP, close the connection
 		logrus.WithFields(logrus.Fields{
-			"context":     "HandleConnection",
 			"event":       "rejected_non_zerotier_ip",
 			"remote_addr": conn.RemoteAddr().String(),
 		}).Warn("Rejected connection from non-ZeroTier IP")
@@ -120,7 +166,6 @@ func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn ne
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"context":     "HandleConnection",
 		"event":       "accepted_zerotier_connection",
 		"local_addr":  conn.LocalAddr().String(),
 		"remote_addr": conn.RemoteAddr().String(),
@@ -132,30 +177,24 @@ func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn ne
 	header, err := reader.Peek(2)
 	if err != nil && err != io.EOF {
 		logrus.WithFields(logrus.Fields{
-			"context":     "HandleConnection",
 			"event":       "peek_header_error",
 			"local_addr":  conn.LocalAddr().String(),
 			"remote_addr": conn.RemoteAddr().String(),
-		}).Error("Failed to peek header: ", err)
+		}).Error("Failed to peek header")
 		return
 	}
 
 	if len(header) == 2 && header[0] == 0x1f && header[1] == 0x8b {
-		logrus.WithFields(logrus.Fields{
-			"context":     "HandleConnection",
-			"event":       "gzip_header_detected",
-			"remote_addr": conn.RemoteAddr().String(),
-		}).Info("Gzip header detected, creating gzip reader")
+		logrus.WithField("remote_addr", conn.RemoteAddr().String()).Info("Gzip header detected, creating gzip reader")
 
 		gzipReader, err := gzip.NewReader(reader)
 		if err != nil {
 			atomic.AddInt64(&m.totalFailedConnections, 1)
 			logrus.WithFields(logrus.Fields{
-				"context":     "HandleConnection",
 				"event":       "gzip_reader_error",
 				"local_addr":  conn.LocalAddr().String(),
 				"remote_addr": conn.RemoteAddr().String(),
-			}).Error("Failed to create gzip reader: ", err)
+			}).Error("Failed to create gzip reader")
 			return
 		}
 		defer gzipReader.Close()
@@ -167,16 +206,14 @@ func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn ne
 	if err := socksServer.ServeConn(connWithReader); err != nil {
 		atomic.AddInt64(&m.totalFailedConnections, 1)
 		logrus.WithFields(logrus.Fields{
-			"context":     "HandleConnection",
 			"event":       "serve_connection_error",
 			"local_addr":  conn.LocalAddr().String(),
 			"remote_addr": conn.RemoteAddr().String(),
-		}).Error("Failed to serve connection: ", err)
+		}).Error("Failed to serve connection")
 	} else {
 		atomic.AddInt64(&m.totalSuccessfulConnections, 1)
 		atomic.AddInt64(&m.totalRequests, 1)
 		logrus.WithFields(logrus.Fields{
-			"context":     "HandleConnection",
 			"event":       "serve_connection_success",
 			"local_addr":  conn.LocalAddr().String(),
 			"remote_addr": conn.RemoteAddr().String(),
@@ -184,45 +221,58 @@ func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn ne
 	}
 }
 
-// GetMaxConcurrentConnections returns the maximum number of concurrent connections.
+// GetMaxConcurrentConnections returns the maximum number of concurrent connections that have been active at the same time.
 func (m *ConnectionManager) GetMaxConcurrentConnections() int64 {
 	maxConcurrentConnections := atomic.LoadInt64(&m.maxConcurrentConnections)
-	logrus.WithField("maxConcurrentConnections", maxConcurrentConnections).Info("Max concurrent connections")
+	logrus.WithField("maxConcurrentConnections", maxConcurrentConnections).Debug("Retrieved max concurrent connections")
 	return maxConcurrentConnections
 }
 
-// Connect creates a new connection.
-
-// GetTotalRequests returns the total number of requests made.
+// GetTotalRequests returns the total number of requests made since the creation of the ConnectionManager.
 func (m *ConnectionManager) GetTotalRequests() int64 {
-	return atomic.LoadInt64(&m.totalRequests)
+	totalRequests := atomic.LoadInt64(&m.totalRequests)
+	logrus.WithField("totalRequests", totalRequests).Debug("Retrieved total number of requests")
+	return totalRequests
 }
 
-// GetTotalFailed returns the total number of failed connection attempts.
+// GetTotalFailed returns the total number of failed connection attempts since the ConnectionManager was created.
 func (m *ConnectionManager) GetTotalFailed() int64 {
-	return atomic.LoadInt64(&m.totalFailed)
+	totalFailed := atomic.LoadInt64(&m.totalFailed)
+	logrus.WithField("totalFailed", totalFailed).Debug("Retrieved total number of failed connections")
+	return totalFailed
 }
 
-// AcceptConnection increments the totalConnections and currentConnections counters.
-// It also updates the maxConcurrentConnections counter if necessary.
+// AcceptConnection increments the connection counters and updates the maximum concurrent connections if the current value exceeds the previously recorded maximum.
 func (m *ConnectionManager) AcceptConnection() {
 	atomic.AddInt64(&m.totalConnections, 1)
 	currentConnections := atomic.AddInt64(&m.currentConnections, 1)
-	if currentConnections > atomic.LoadInt64(&m.maxConcurrentConnections) {
+	maxConcurrentConnections := atomic.LoadInt64(&m.maxConcurrentConnections)
+	if currentConnections > maxConcurrentConnections {
 		atomic.StoreInt64(&m.maxConcurrentConnections, currentConnections)
+		logrus.WithField("newMaxConcurrentConnections", currentConnections).Debug("Updated max concurrent connections")
 	}
+	logrus.WithFields(logrus.Fields{
+		"totalConnections":   atomic.LoadInt64(&m.totalConnections),
+		"currentConnections": currentConnections,
+		"maxConcurrentConns": maxConcurrentConnections,
+	}).Debug("Accepted new connection")
 }
 
-// GetTotalConnections returns the total number of accepted connections.
+// GetTotalConnections returns the total number of connections that have been accepted since the ConnectionManager was created.
 func (m *ConnectionManager) GetTotalConnections() int64 {
-	return atomic.LoadInt64(&m.totalConnections)
+	totalConnections := atomic.LoadInt64(&m.totalConnections)
+	logrus.WithField("totalConnections", totalConnections).Debug("Retrieved total number of connections")
+	return totalConnections
 }
 
-// GetUptime returns the time duration since the ConnectionManager was created.
+// GetUptime returns the duration since the ConnectionManager was created.
 func (m *ConnectionManager) GetUptime() time.Duration {
-	return time.Since(m.startTime)
+	uptime := time.Since(m.startTime)
+	logrus.WithField("uptime", uptime).Debug("Retrieved uptime of the ConnectionManager")
+	return uptime
 }
 
+// Close terminates the given network connection and removes it from the manager's tracking.
 func (m *ConnectionManager) Close(conn net.Conn) {
 	m.connMutex.Lock()
 	defer m.connMutex.Unlock()
@@ -230,30 +280,42 @@ func (m *ConnectionManager) Close(conn net.Conn) {
 	addr := conn.RemoteAddr().String()
 	if _, ok := m.conns[addr]; ok {
 		if err := conn.Close(); err != nil {
-			logrus.WithField("address", addr).Error("Failed to close connection: ", err)
+			logrus.WithField("address", addr).Error("Failed to close connection")
 		} else {
-			logrus.WithField("address", addr).Info("Successfully closed connection")
+			logrus.WithField("address", addr).Debug("Successfully closed connection")
 			delete(m.conns, addr)
 		}
 	}
 }
 
-// GetTotalFailedConnections returns the total number of failed connections.
+// GetTotalFailedConnections returns the total number of connections that have failed after being accepted.
 func (m *ConnectionManager) GetTotalFailedConnections() int64 {
-	return atomic.LoadInt64(&m.totalFailedConnections)
+	totalFailedConnections := atomic.LoadInt64(&m.totalFailedConnections)
+	logrus.WithField("totalFailedConnections", totalFailedConnections).Debug("Retrieved total number of failed connections")
+	return totalFailedConnections
 }
 
-// GetTotalSuccessfulConnections returns the total number of successful connections.
+// GetTotalSuccessfulConnections returns the total number of connections that have been successfully handled.
 func (m *ConnectionManager) GetTotalSuccessfulConnections() int64 {
-	return atomic.LoadInt64(&m.totalSuccessfulConnections)
+	totalSuccessfulConnections := atomic.LoadInt64(&m.totalSuccessfulConnections)
+	logrus.WithField("totalSuccessfulConnections", totalSuccessfulConnections).Debug("Retrieved total number of successful connections")
+	return totalSuccessfulConnections
 }
 
-// connWithReader is a net.Conn that has its own reader.
+// connWithReader wraps a net.Conn to associate it with an io.Reader.
 type connWithReader struct {
 	net.Conn
 	reader io.Reader
 }
 
+// Read reads data from the wrapped io.Reader.
 func (c *connWithReader) Read(b []byte) (n int, err error) {
-	return c.reader.Read(b)
+	n, err = c.reader.Read(b)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"localAddr":  c.Conn.LocalAddr().String(),
+			"remoteAddr": c.Conn.RemoteAddr().String(),
+		}).Error("Failed to read data from connection")
+	}
+	return n, err
 }
