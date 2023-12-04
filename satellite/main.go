@@ -32,12 +32,20 @@ func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.C
 
 func getZeroTierIP() (string, error) {
 	cmd := exec.Command("zerotier-cli", "listnetworks")
-	output, err := cmd.Output()
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run() // Use Run instead of Output to capture both stdout and stderr
 	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"stderr": stderr.String(),
+			"stdout": stdout.String(),
+		}).Error("Error executing zerotier-cli listnetworks")
 		return "", err
 	}
 
-	lines := strings.Split(string(output), "\n")
+	output := stdout.String()
+	lines := strings.Split(output, "\n")
 	logrus.Info("ZeroTier networks: ", lines)
 
 	for _, line := range lines {
