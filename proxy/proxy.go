@@ -28,21 +28,18 @@ func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.C
 	var localAddr net.Addr
 	var err error
 
-	// First, attempt to use IPv6 address of usb0
-	ip, err := getUSB0IPv6()
-	if err == nil {
-		localAddr = &net.TCPAddr{IP: ip, Port: 0} // Port 0 means any available port
-		network = "tcp6"                          // Force IPv6
+	// Attempt to use the IPv6 address of usb0. If not available, fall back to IPv4.
+	ipv6Addr, ipv4Addr := getUSB0Addresses()
+	if ipv6Addr != nil {
+		localAddr = &net.TCPAddr{IP: ipv6Addr, Port: 0}
+		network = "tcp6"
+	} else if ipv4Addr != nil {
+		localAddr = &net.TCPAddr{IP: ipv4Addr, Port: 0}
+		network = "tcp4"
 	} else {
-		logrus.WithError(err).Debug("Failed to get usb0 IPv6 address, falling back to IPv4")
-		// If IPv6 is not available, fallback to IPv4 address of usb0
-		ip, err = getUSB0IPv4()
-		if err != nil {
-			logrus.WithError(err).Error("Failed to get usb0 IPv4 address")
-			return nil, err
-		}
-		localAddr = &net.TCPAddr{IP: ip, Port: 0}
-		network = "tcp4" // Force IPv4
+		errMsg := "usb0 interface does not have a valid IPv6 or IPv4 address"
+		logrus.Error(errMsg)
+		return nil, fmt.Errorf(errMsg)
 	}
 
 	dialer := &net.Dialer{
@@ -67,6 +64,42 @@ func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.C
 	}).Info("Successfully established connection using usb0")
 	logrus.Debug("Exiting SimpleDialer.Dial method")
 	return conn, nil
+}
+
+// getUSB0Addresses returns the IPv6 and IPv4 addresses of the usb0 interface.
+func getUSB0Addresses() (ipv6Addr, ipv4Addr net.IP) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		logrus.WithError(err).Error("Failed to get network interfaces")
+		return nil, nil
+	}
+
+	for _, iface := range ifaces {
+		if iface.Name != "usb0" {
+			continue
+		}
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			logrus.WithError(err).WithField("interface", iface.Name).Error("Failed to get addresses for interface")
+			return nil, nil
+		}
+
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			ip := ipNet.IP
+			if ip.To4() != nil {
+				ipv4Addr = ip
+			} else if ip.To16() != nil && ip.IsGlobalUnicast() {
+				ipv6Addr = ip
+			}
+		}
+	}
+
+	return ipv6Addr, ipv4Addr
 }
 
 // getUSB0IPv6 retrieves the preferred global unicast IPv6 address of the usb0 interface.
