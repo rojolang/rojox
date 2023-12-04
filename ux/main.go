@@ -9,7 +9,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rojolang/rojox/server"
-	"github.com/rojolang/rojox/stats"
 	"go.uber.org/zap"
 	"net"
 	"net/http"
@@ -38,15 +37,17 @@ func (e *ErrorWithContext) Error() string {
 	return fmt.Sprintf("%s: %v", e.Context, e.Err)
 }
 
+// Run starts the UX server with the given LoadBalancer.
+// Run starts the UX server with the given LoadBalancer.
 func Run(lb *server.LoadBalancer) {
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 
 	// Set up the registration handler.
 	http.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
-		registerHandler(logger, w, r, lb) // Pass the LoadBalancer instance to the handler
 		// Increment Prometheus counter for registration requests.
 		registrationsReceived.Inc()
+		registerHandler(logger, w, r, lb) // Pass the LoadBalancer instance to the handler
 	})
 
 	// Start the HTTP server on a separate port for registration and metrics.
@@ -55,8 +56,8 @@ func Run(lb *server.LoadBalancer) {
 	// Start listening for SOCKS connections on port 9050.
 	go startListener(":9050", lb, logger)
 
-	// Start the stats printing routine using the ConnectionManager from the LoadBalancer.
-	go stats.PrintStats(lb.GetConnectionManager())
+	// Set up the Prometheus metrics endpoint.
+	http.Handle("/metrics", promhttp.Handler())
 
 	// Wait for termination signals and pass the httpServer to handleTerminationSignals.
 	handleTerminationSignals(httpServer, logger)
@@ -64,14 +65,13 @@ func Run(lb *server.LoadBalancer) {
 
 func startHTTPServer(listenAddress string, logger *zap.Logger) *http.Server {
 	logger.Info("Starting HTTP server on " + listenAddress)
-
-	mux := http.NewServeMux()                  // Create a new ServeMux to avoid using the default one.
-	mux.Handle("/metrics", promhttp.Handler()) // Register /metrics handler.
-
 	httpServer := &http.Server{
 		Addr:    listenAddress,
-		Handler: mux, // Use the new ServeMux.
+		Handler: nil, // Default ServeMux.
 	}
+
+	// Set up the Prometheus metrics endpoint.
+	http.Handle("/metrics", promhttp.Handler())
 
 	// Listen for incoming connections.
 	listener, err := net.Listen("tcp", listenAddress)
@@ -88,6 +88,7 @@ func startHTTPServer(listenAddress string, logger *zap.Logger) *http.Server {
 
 	return httpServer
 }
+
 func startListener(listenAddress string, lb *server.LoadBalancer, logger *zap.Logger) {
 	logger.Info("Listening for incoming SOCKS connections on " + listenAddress)
 	listener, err := net.Listen("tcp", listenAddress)
