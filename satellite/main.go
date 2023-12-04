@@ -28,6 +28,7 @@ type SimpleDialer struct{}
 // Dial dials out using the satellite's global unicast IPv6 address.
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
 	ipv6Addr, err := getIPv6Address()
+	logrus.Printf("satellite dialer started")
 	if err != nil {
 		logrus.WithError(err).Error("Failed to get IPv6 address for outbound connections")
 		return nil, err
