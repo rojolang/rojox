@@ -31,41 +31,8 @@ func CheckIPType(ip string) string {
 	return "Unknown"
 }
 
-func ListenForConnections(socksServer *socks5.Server, eth0IP net.IP, manager *proxy.ConnectionManager) (net.Listener, error) {
-	address := fmt.Sprintf("%s:9050", eth0IP.String())
-	logrus.Info("Listening for incoming connections on ", address)
-	listener, err := net.Listen("tcp", address)
-	if err != nil {
-		logrus.WithFields(logrus.Fields{"context": "listening for connections"}).Error(err)
-		return nil, err
-	}
-
-	go func() {
-		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				if opErr, ok := err.(*net.OpError); ok && opErr.Op == "accept" {
-					logrus.WithFields(logrus.Fields{"context": "accepting connection"}).Info("Listener closed")
-					break
-				} else {
-					logrus.WithFields(logrus.Fields{"context": "accepting connection"}).Error(err)
-					continue
-				}
-			}
-			manager.AcceptConnection() // Increment the totalConnections counter
-			logrus.WithFields(logrus.Fields{
-				"event":       "connection_accept",
-				"local_addr":  conn.LocalAddr().String(),
-				"remote_addr": conn.RemoteAddr().String(),
-			}).Info("Accepted new connection")
-
-			go manager.HandleConnection(socksServer, conn) // Call the HandleConnection method of the manager
-		}
-	}()
-
-	return listener, nil
-}
-
+// SetupSocks5Server sets up a new SOCKS5 server with a custom Dial function.
+// It returns the SOCKS5 server or an error if there was an issue setting it up.
 func SetupSocks5Server() (*socks5.Server, error) {
 	conf := &socks5.Config{} // No custom Dial function needed
 	socksServer, err := socks5.New(conf)
@@ -99,6 +66,39 @@ func GetEth0IP() (net.IP, error) {
 
 // ListenForConnections starts a goroutine that listens for incoming connections on the specified address.
 // It returns the listener and an error if there was an issue setting it up.
+func ListenForConnections(socksServer *socks5.Server, eth0IP net.IP, manager *proxy.ConnectionManager) (net.Listener, error) {
+	address := fmt.Sprintf("%s:9050", eth0IP.String())
+	logrus.Info("Listening for incoming connections on ", address)
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{"context": "listening for connections"}).Error(err)
+		return nil, err
+	}
+
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				if opErr, ok := err.(*net.OpError); ok && opErr.Op == "accept" {
+					logrus.WithFields(logrus.Fields{"context": "accepting connection"}).Info("Listener closed")
+				} else {
+					logrus.WithFields(logrus.Fields{"context": "accepting connection"}).Error(err)
+				}
+				return
+			}
+			manager.AcceptConnection() // Increment the totalConnections counter
+			logrus.WithFields(logrus.Fields{
+				"event":       "connection_accept",
+				"local_addr":  conn.LocalAddr().String(),
+				"remote_addr": conn.RemoteAddr().String(),
+			}).Info("Accepted new connection")
+
+			go manager.HandleConnection(socksServer, conn) // Call the HandleConnection method of the manager
+		}
+	}()
+
+	return listener, nil
+}
 
 // SetupHTTPServer sets up a new HTTP server with TLS.
 // It returns the HTTP server or an error if there was an issue setting it up.

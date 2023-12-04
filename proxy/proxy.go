@@ -22,47 +22,15 @@ type Dialer interface {
 type SimpleDialer struct{}
 
 // Dial creates a network connection using the specified network, address, and context.
-// It prefers IPv6 and falls back to IPv4 for outgoing connections.
+// It prefers IPv6 and falls back to IPv4 on the usb0 interface for outgoing connections.
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
 	logrus.Debug("Entering SimpleDialer.Dial method")
-
-	// Try to resolve the address to see if it has an IPv6 address.
-	host, port, err := net.SplitHostPort(address)
-	if err != nil {
-		logrus.WithError(err).Error("Failed to split network address")
-		return nil, err
-	}
-
-	ips, err := net.LookupIP(host)
-	if err != nil {
-		logrus.WithError(err).Error("Failed to look up IP for host")
-		return nil, err
-	}
-
-	var ipv6Addr net.IP
-	for _, ip := range ips {
-		if ip.To4() == nil && ip.IsGlobalUnicast() {
-			ipv6Addr = ip
-			break
-		}
-	}
-
-	var dialAddr string
-	if ipv6Addr != nil {
-		// Use the IPv6 address if available.
-		dialAddr = net.JoinHostPort(ipv6Addr.String(), port)
-		network = "tcp6"
-	} else {
-		// Fall back to the original address, which could be IPv4.
-		dialAddr = address
-		network = "tcp4"
-	}
 
 	// Create a dialer without specifying LocalAddr to use the system's default routing
 	dialer := &net.Dialer{}
 
 	// Dial out using the system's default routing
-	conn, err := dialer.DialContext(ctx, network, dialAddr)
+	conn, err := dialer.DialContext(ctx, network, address)
 	if err != nil {
 		logrus.WithError(err).Error("Failed to dial")
 		return nil, err
@@ -74,6 +42,170 @@ func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.C
 	}).Info("Successfully established connection")
 	logrus.Debug("Exiting SimpleDialer.Dial method")
 	return conn, nil
+}
+
+// getUSB0Addresses returns the IPv6 and IPv4 addresses of the usb0 interface.
+func getUSB0Addresses() (ipv6Addr, ipv4Addr net.IP) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		logrus.WithError(err).Error("Failed to get network interfaces")
+		return nil, nil
+	}
+
+	for _, iface := range ifaces {
+		if iface.Name != "usb0" {
+			continue
+		}
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			logrus.WithError(err).WithField("interface", iface.Name).Error("Failed to get addresses for interface")
+			return nil, nil
+		}
+
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			ip := ipNet.IP
+			if ip.To4() != nil {
+				ipv4Addr = ip
+			} else if ip.To16() != nil && ip.IsGlobalUnicast() {
+				ipv6Addr = ip
+			}
+		}
+	}
+
+	return ipv6Addr, ipv4Addr
+}
+
+// getUSB0IPv6 retrieves the preferred global unicast IPv6 address of the usb0 interface.
+func getUSB0IPv6() (net.IP, error) {
+	ifaces, err := net.Interfaces()
+	logrus.Debug("Entering getUSB0IPv6 function")
+	if err != nil {
+		logrus.WithError(err).Error("Failed to get network interfaces")
+		return nil, err
+	}
+
+	for _, iface := range ifaces {
+		if iface.Name != "usb0" {
+			continue
+		}
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			logrus.WithError(err).WithField("interface", iface.Name).Error("Failed to get addresses for interface")
+			return nil, err
+		}
+
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			ip := ipNet.IP
+			if ip.To4() == nil && ip.IsGlobalUnicast() {
+				logrus.WithFields(logrus.Fields{
+					"interface": "usb0",
+					"ipv6":      ip.String(),
+				}).Info("IPv6 address found for usb0")
+				return ip, nil
+			}
+		}
+	}
+	logrus.Debug("Exiting getUSB0IPv6 function")
+	return nil, fmt.Errorf("usb0 interface not found or has no global unicast IPv6 address")
+}
+
+func getUSB0IPv4() (net.IP, error) {
+	ifaces, err := net.Interfaces()
+	logrus.Debug("Entering getUSB0IPv4 function")
+	if err != nil {
+		logrus.WithError(err).Error("Failed to get network interfaces")
+		return nil, err
+	}
+
+	for _, iface := range ifaces {
+		if iface.Name != "usb0" {
+			continue
+		}
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			logrus.WithError(err).WithField("interface", iface.Name).Error("Failed to get addresses for interface")
+			return nil, err
+		}
+
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			ip := ipNet.IP
+			// Check if the IP is an IPv4 address.
+			if ipv4 := ip.To4(); ipv4 != nil {
+				logrus.WithFields(logrus.Fields{
+					"interface": "usb0",
+					"ipv4":      ipv4.String(),
+				}).Info("IPv4 address found for usb0")
+				return ipv4, nil // Return the IPv4 address.
+			}
+		}
+	}
+	logrus.Debug("Exiting getUSB0IPv4 function")
+	return nil, fmt.Errorf("usb0 interface not found or has no IPv4 address")
+}
+
+// getEth0IP retrieves the IPv6 address of the eth0 interface.
+func getEth0IP() (net.IP, error) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		logrus.WithError(err).Error("Failed to get network interfaces")
+		return nil, err
+	}
+
+	for _, iface := range ifaces {
+		if iface.Name == "eth0" {
+			addrs, err := iface.Addrs()
+			if err != nil {
+				logrus.WithError(err).WithField("interface", iface.Name).Error("Failed to get addresses for interface")
+				return nil, err
+			}
+
+			for _, addr := range addrs {
+				var ip net.IP
+				switch v := addr.(type) {
+				case *net.IPNet:
+					ip = v.IP
+				case *net.IPAddr:
+					ip = v.IP
+				}
+
+				if ip == nil {
+					continue
+				}
+
+				// Log all addresses for eth0
+				logrus.WithFields(logrus.Fields{
+					"interface": iface.Name,
+					"address":   ip.String(),
+				}).Info("Address found for interface")
+
+				// Check for global unicast IPv6 address
+				if ip.To4() == nil && ip.IsGlobalUnicast() {
+					logrus.WithFields(logrus.Fields{
+						"interface": "eth0",
+						"ipv6":      ip.String(),
+					}).Info("IPv6 address found for eth0")
+					return ip, nil
+				}
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("eth0 interface not found or has no global unicast IPv6 address")
 }
 
 // ConnectionManager manages and monitors network connections.
@@ -89,6 +221,16 @@ type ConnectionManager struct {
 	startTime                  time.Time
 	conns                      map[string]net.Conn
 	connMutex                  sync.Mutex
+}
+
+// NewConnectionManager creates a new ConnectionManager with the provided Dialer.
+func NewConnectionManager(dialer Dialer) *ConnectionManager {
+	logrus.Info("Creating new ConnectionManager")
+	return &ConnectionManager{
+		dialer:    dialer,
+		startTime: time.Now(),
+		conns:     make(map[string]net.Conn),
+	}
 }
 
 // Connect establishes a new network connection using the provided network and address.
@@ -140,22 +282,9 @@ func isZeroTierIP(ip string, conn net.Conn) bool {
 	return false
 }
 
-// NewConnectionManager creates a new ConnectionManager with the provided Dialer.
-func NewConnectionManager(dialer Dialer) *ConnectionManager {
-	logrus.Info("Creating new ConnectionManager")
-	return &ConnectionManager{
-		dialer:    dialer,
-		startTime: time.Now(),
-		conns:     make(map[string]net.Conn),
-	}
-}
-
-// HandleConnection processes an accepted connection using the provided SOCKS5 server.
 func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn net.Conn) {
 	defer m.Close(conn)
 	logrus.Debug("Entering ConnectionManager.HandleConnection method")
-
-	// Extract the remote IP address from the connection.
 	ip, _, err := net.SplitHostPort(conn.RemoteAddr().String())
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -166,7 +295,6 @@ func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn ne
 		return
 	}
 
-	// Check if the remote IP is a valid ZeroTier IP.
 	if !isZeroTierIP(ip, conn) {
 		logrus.WithFields(logrus.Fields{
 			"event":       "rejected_non_zerotier_ip",
@@ -182,7 +310,9 @@ func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn ne
 		"zerotier_ip": ip,
 	}).Info("Accepted connection from ZeroTier IP")
 
-	// Serve the connection using the provided SOCKS5 server.
+	// The socksServer.ServeConn method will handle the SOCKS5 protocol negotiation,
+	// including forwarding the connection to the requested destination.
+	// Ensure that the socksServer is configured to use our SimpleDialer for outbound connections.
 	if err := socksServer.ServeConn(conn); err != nil {
 		atomic.AddInt64(&m.totalFailedConnections, 1)
 		logrus.WithFields(logrus.Fields{
@@ -200,22 +330,6 @@ func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn ne
 		}).Info("Successfully served connection")
 	}
 	logrus.Debug("Exiting ConnectionManager.HandleConnection method")
-}
-
-// Close terminates the given network connection and removes it from the manager's tracking.
-func (m *ConnectionManager) Close(conn net.Conn) {
-	m.connMutex.Lock()
-	defer m.connMutex.Unlock()
-
-	addr := conn.RemoteAddr().String()
-	if _, ok := m.conns[addr]; ok {
-		if err := conn.Close(); err != nil {
-			logrus.WithField("address", addr).Error("Failed to close connection")
-		} else {
-			logrus.WithField("address", addr).Info("Successfully closed connection")
-			delete(m.conns, addr)
-		}
-	}
 }
 
 // GetMaxConcurrentConnections returns the maximum number of concurrent connections that have been active at the same time.
@@ -267,6 +381,22 @@ func (m *ConnectionManager) GetUptime() time.Duration {
 	uptime := time.Since(m.startTime)
 	logrus.WithField("uptime", uptime).Debug("Retrieved uptime of the ConnectionManager")
 	return uptime
+}
+
+// Close terminates the given network connection and removes it from the manager's tracking.
+func (m *ConnectionManager) Close(conn net.Conn) {
+	m.connMutex.Lock()
+	defer m.connMutex.Unlock()
+
+	addr := conn.RemoteAddr().String()
+	if _, ok := m.conns[addr]; ok {
+		if err := conn.Close(); err != nil {
+			logrus.WithField("address", addr).Error("Failed to close connection")
+		} else {
+			logrus.WithField("address", addr).Debug("Successfully closed connection")
+			delete(m.conns, addr)
+		}
+	}
 }
 
 // GetTotalFailedConnections returns the total number of connections that have failed after being accepted.

@@ -6,16 +6,9 @@ import (
 	"fmt"
 	"github.com/rojolang/rojox/client"
 	"github.com/rojolang/rojox/satellite"
-	"github.com/rojolang/rojox/server"
 	"github.com/rojolang/rojox/ux"
 	"os"
 	"strings"
-	"time"
-)
-
-const (
-	loadBalancerBufferSize = 100              // Size of the channel buffer for handling connections
-	healthCheckInterval    = 30 * time.Second // Interval for health checks on satellites
 )
 
 func main() {
@@ -31,7 +24,12 @@ func main() {
 	case *satellitePtr:
 		satellite.Run() // Run satellite
 	case *uxPtr:
-		runUX() // Run UX
+		err := os.Chdir("./ux") // os.Chdir returns an error
+		if err != nil {
+			fmt.Printf("Failed to change directory: %v\n", err)
+			os.Exit(1)
+		}
+		ux.Run() // Run UX
 	default:
 		runInteractiveMode()
 	}
@@ -59,15 +57,14 @@ func runInteractiveMode() {
 	case "2":
 		satellite.Run() // Run satellite
 	case "3":
-		runUX() // Run UX
+		err := os.Chdir("./ux") // os.Chdir returns an error
+		if err != nil {
+			fmt.Printf("Failed to change directory: %v\n", err)
+			os.Exit(1)
+		}
+		ux.Run() // Run UX
 	default:
 		fmt.Println("Invalid option. Please enter 1, 2, or 3.")
 		os.Exit(1)
 	}
-}
-
-func runUX() {
-	// Create a new LoadBalancer with the specified buffer size and health check interval
-	loadBalancer := server.NewLoadBalancer(loadBalancerBufferSize, healthCheckInterval)
-	ux.Run(loadBalancer) // Run UX with the new LoadBalancer
 }

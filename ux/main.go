@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/rojolang/rojox/server"
-	"go.uber.org/zap"
+	"github.com/sirupsen/logrus"
 	"net"
 	"net/http"
-
+	"os"
 	"time"
 )
 
@@ -20,45 +20,41 @@ func (e *ErrorWithContext) Error() string {
 	return fmt.Sprintf("%s: %v", e.Context, e.Err)
 }
 
-// Run starts the UX server with the given LoadBalancer.
-func Run(lb *server.LoadBalancer) {
-	logger, _ := zap.NewProduction()
-	defer logger.Sync()
+func Run() {
+	logrus.SetOutput(os.Stdout)
+	logrus.SetLevel(logrus.InfoLevel)
+
+	lb := server.NewLoadBalancer()
 
 	http.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
-		registerHandler(logger, w, r, lb) // Pass the LoadBalancer instance to the handler
+		registerHandler(w, r, lb) // Pass the LoadBalancer instance to the handler
 	})
 
-	go startListener(logger, lb)
+	go startListener(lb)
 
-	logger.Info("Starting HTTP server")
+	logrus.Info("Starting HTTP server")
 	if err := http.ListenAndServe(":8080", nil); err != nil {
-		logger.Fatal("starting HTTP server", zap.Error(&ErrorWithContext{
+		logrus.Fatal(&ErrorWithContext{
 			Context: "starting HTTP server",
 			Err:     err,
-		}))
+		})
 	}
 }
 
-func startListener(logger *zap.Logger, lb *server.LoadBalancer) {
+func startListener(lb *server.LoadBalancer) {
 	for {
-		logger.Info("Listening for incoming connections")
+		logrus.Info("Listening for incoming connections")
 		listener, err := net.Listen("tcp", ":9050")
 		if err != nil {
-			logger.Error("listening for connections", zap.Error(err))
+			logrus.WithFields(logrus.Fields{"context": "listening for connections"}).Error(err)
 			return
 		}
-		defer func(listener net.Listener) {
-			err := listener.Close()
-			if err != nil {
-				logger.Error("closing listener", zap.Error(err))
-			}
-		}(listener)
+		defer listener.Close()
 
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
-				logger.Error("accepting connection", zap.Error(err))
+				logrus.WithFields(logrus.Fields{"context": "accepting connection"}).Error(err)
 				break
 			}
 			go lb.HandleConnection(conn)
@@ -67,45 +63,39 @@ func startListener(logger *zap.Logger, lb *server.LoadBalancer) {
 	}
 }
 
-func registerHandler(logger *zap.Logger, w http.ResponseWriter, r *http.Request, lb *server.LoadBalancer) {
-	logger.Info("Received registration request", zap.String("remoteAddr", r.RemoteAddr))
+func registerHandler(w http.ResponseWriter, r *http.Request, lb *server.LoadBalancer) {
+	logrus.Info("Received registration request from ", r.RemoteAddr)
 
 	if r.Method != http.MethodPost {
-		msg := "Invalid method"
-		http.Error(w, msg, http.StatusMethodNotAllowed)
-		logger.Error(msg, zap.String("method", r.Method))
+		http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
 		return
 	}
 
-	ip, err := parseRequest(logger, r)
+	ip, err := parseRequest(r)
 	if err != nil {
-		msg := "Bad request"
-		http.Error(w, msg, http.StatusBadRequest)
-		logger.Error(msg, zap.Error(err))
+		logrus.WithFields(logrus.Fields{"context": "parsing request", "error": err}).Error("Error occurred while parsing request")
+		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
 
-	logger.Info("Registering satellite", zap.String("ip", ip))
+	logrus.WithField("ip", ip).Info("Registering satellite")
 	lb.RegisterSatellite(ip) // Register satellite with the LoadBalancer
-	if _, err := fmt.Fprintln(w, "Registered new satellite:", ip); err != nil {
-		logger.Error("writing response", zap.Error(err))
-	}
+	fmt.Fprintln(w, "Registered new satellite:", ip)
 }
 
-func parseRequest(logger *zap.Logger, r *http.Request) (string, error) {
+func parseRequest(r *http.Request) (string, error) {
 	var data map[string]string
 	if err := json.NewDecoder(r.Body).Decode(&data); err != nil {
-		logger.Error("decoding request body", zap.Error(err))
+		logrus.WithFields(logrus.Fields{"context": "decoding request body", "error": err}).Error("Error occurred while decoding request body")
 		return "", err
 	}
 
 	ip, ok := data["ip"]
 	if !ok {
-		err := fmt.Errorf("IP not provided in request")
-		logger.Error("getting IP from request", zap.Error(err))
-		return "", err
+		logrus.WithFields(logrus.Fields{"context": "getting IP from request"}).Error("IP not provided in request")
+		return "", fmt.Errorf("IP not provided in request")
 	}
 
-	logger.Info("Parsed IP from request", zap.String("ip", ip))
+	logrus.WithField("ip", ip).Info("Parsed IP from request")
 	return ip, nil
 }
