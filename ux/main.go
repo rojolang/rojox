@@ -34,7 +34,7 @@ func Run(lb *server.LoadBalancer) {
 		registerHandler(logger, w, r, lb) // Pass the LoadBalancer instance to the handler
 	})
 
-	listenAddress := "0.0.0.0:8080" // Replace with the specific IP if necessary.
+	listenAddress := "10.243.171.71:9050" // Replace with the specific IP if necessary.
 	logger.Info("Starting HTTP server on " + listenAddress)
 	httpServer := &http.Server{ // Renamed variable to httpServer
 		Addr:    listenAddress,
