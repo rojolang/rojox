@@ -238,13 +238,19 @@ func (lb *LoadBalancer) handleSingleConnection(conn net.Conn) {
 
 // copyData copies data between two connections and logs errors if they occur.
 func copyData(dst net.Conn, src net.Conn, logger *zap.Logger) {
-	if _, err := io.Copy(dst, src); err != nil {
+	// Use io.Copy to copy the data from src to dst.
+	_, err := io.Copy(dst, src)
+	if err != nil {
+		// Log the error if the copy operation fails.
 		logger.Error("Failed to copy data between connections", zap.Error(err))
+	}
+
+	// Close the source and destination connections.
+	// We check if the error from closing is nil before logging it.
+	if err := src.Close(); err != nil {
+		logger.Error("Failed to close source connection", zap.Error(err))
 	}
 	if err := dst.Close(); err != nil {
 		logger.Error("Failed to close destination connection", zap.Error(err))
-	}
-	if err := src.Close(); err != nil {
-		logger.Error("Failed to close source connection", zap.Error(err))
 	}
 }
