@@ -57,55 +57,50 @@ func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.C
 }
 
 // getEth0IP retrieves the preferred IPv6 address of the eth0 interface.
+// getEth0IP retrieves the preferred IPv6 address of the eth0 interface.
 func getEth0IP() (net.IP, error) {
-	logrus.Info("Retrieving IP addresses for all network interfaces")
-	ifaces, err := net.Interfaces()
+	logrus.Info("Retrieving IP addresses for eth0 network interface")
+	var eth0IPv6 net.IP
+
+	iface, err := net.InterfaceByName("eth0")
 	if err != nil {
-		logrus.WithError(err).Error("Failed to get network interfaces")
+		logrus.WithError(err).Error("Failed to get eth0 network interface")
 		return nil, err
 	}
 
-	var eth0IPv6 net.IP
-	for _, iface := range ifaces {
-		logrus.WithFields(logrus.Fields{
-			"interface": iface.Name,
-			"flags":     iface.Flags,
-		}).Info("Checking network interface")
+	addrs, err := iface.Addrs()
+	if err != nil {
+		logrus.WithError(err).Error("Failed to get addresses for eth0 interface")
+		return nil, err
+	}
 
-		addrs, err := iface.Addrs()
-		if err != nil {
-			logrus.WithError(err).WithField("interface", iface.Name).Error("Failed to get addresses for interface")
-			continue // Log the error and continue checking the next interface.
+	for _, addr := range addrs {
+		var ip net.IP
+		switch v := addr.(type) {
+		case *net.IPNet:
+			ip = v.IP
+		case *net.IPAddr:
+			ip = v.IP
 		}
 
-		for _, addr := range addrs {
-			var ip net.IP
-			switch v := addr.(type) {
-			case *net.IPNet:
-				ip = v.IP
-			case *net.IPAddr:
-				ip = v.IP
-			}
+		if ip == nil {
+			continue
+		}
 
-			if ip == nil {
-				continue
-			}
+		ipType := "IPv6"
+		if ip.To4() != nil {
+			ipType = "IPv4"
+		}
 
-			ipType := "IPv6"
-			if ip.To4() != nil {
-				ipType = "IPv4"
-			}
+		logrus.WithFields(logrus.Fields{
+			"interface": "eth0",
+			"address":   ip.String(),
+			"type":      ipType,
+		}).Info("Found IP address for eth0 interface")
 
-			logrus.WithFields(logrus.Fields{
-				"interface": iface.Name,
-				"address":   ip.String(),
-				"type":      ipType,
-			}).Info("Found IP address for interface")
-
-			// Prefer global unicast IPv6 address.
-			if iface.Name == "eth0" && ipType == "IPv6" && ip.IsGlobalUnicast() {
-				eth0IPv6 = ip
-			}
+		// Prefer global unicast IPv6 address.
+		if ipType == "IPv6" && ip.IsGlobalUnicast() {
+			eth0IPv6 = ip
 		}
 	}
 
@@ -117,7 +112,7 @@ func getEth0IP() (net.IP, error) {
 		return eth0IPv6, nil
 	}
 
-	return nil, fmt.Errorf("eth0 interface not found or has no preferred IPv6 address")
+	return nil, fmt.Errorf("eth0 interface has no preferred IPv6 address")
 }
 
 // ConnectionManager manages and monitors network connections.
