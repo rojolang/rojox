@@ -25,11 +25,13 @@ type SimpleDialer struct{}
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
+		zap.L().Error("Failed to split network address", zap.Error(err))
 		return nil, fmt.Errorf("failed to split network address: %w", err)
 	}
 
 	ips, err := net.LookupIP(host)
 	if err != nil {
+		zap.L().Error("Failed to look up IP for host", zap.Error(err))
 		return nil, fmt.Errorf("failed to look up IP for host: %w", err)
 	}
 
@@ -38,28 +40,35 @@ func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.C
 	dialer := &net.Dialer{}
 
 	// Iterate over the IPs and select the first IPv6 address found.
+	foundIPv6 := false
 	for _, ip := range ips {
 		if ip.To4() == nil && ip.IsGlobalUnicast() {
-			// Use the IPv6 address if available.
+			foundIPv6 = true
 			dialAddr = net.JoinHostPort(ip.String(), port)
+			zap.L().Info("Attempting to dial IPv6 address", zap.String("address", dialAddr))
 			conn, err = dialer.DialContext(ctx, "tcp6", dialAddr)
 			if err == nil {
+				zap.L().Info("Successfully dialed IPv6 address", zap.String("address", dialAddr))
 				return conn, nil
 			}
-			// Log the error and try the next IP if IPv6 connection fails.
-			zap.L().Error("failed to dial IPv6", zap.Error(err), zap.String("address", dialAddr))
+			zap.L().Error("Failed to dial IPv6", zap.Error(err), zap.String("address", dialAddr))
 		}
+	}
+
+	if !foundIPv6 {
+		zap.L().Info("No IPv6 address found, falling back to IPv4", zap.String("host", host))
 	}
 
 	// If no IPv6 addresses are available or all attempts fail, fall back to IPv4.
-	if dialAddr == "" {
-		dialAddr = net.JoinHostPort(host, port)
-		conn, err = dialer.DialContext(ctx, "tcp4", dialAddr)
-		if err != nil {
-			return nil, fmt.Errorf("failed to dial IPv4: %w", err)
-		}
+	dialAddr = net.JoinHostPort(host, port)
+	zap.L().Info("Attempting to dial IPv4 address", zap.String("address", dialAddr))
+	conn, err = dialer.DialContext(ctx, "tcp4", dialAddr)
+	if err != nil {
+		zap.L().Error("Failed to dial IPv4", zap.Error(err), zap.String("address", dialAddr))
+		return nil, fmt.Errorf("failed to dial IPv4: %w", err)
 	}
 
+	zap.L().Info("Successfully dialed IPv4 address", zap.String("address", dialAddr))
 	return conn, nil
 }
 
