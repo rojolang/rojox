@@ -6,6 +6,7 @@ import (
 	"go.uber.org/zap"
 	"io"
 	"net"
+	"net/http"
 	"sync"
 	"time"
 )
@@ -68,7 +69,7 @@ func (lb *LoadBalancer) RegisterSatellite(zeroTierIP string) {
 
 // performHealthChecks runs health checks on all satellites concurrently.
 func (lb *LoadBalancer) performHealthChecks() {
-	lb.mu.RLock() // Use read lock because we're only reading the slice here
+	lb.mu.RLock()
 	satellites := make([]*SatelliteStatus, len(lb.satellites))
 	copy(satellites, lb.satellites) // Copy the slice to avoid locking during iteration
 	lb.mu.RUnlock()
@@ -78,22 +79,32 @@ func (lb *LoadBalancer) performHealthChecks() {
 		wg.Add(1)
 		go func(sat *SatelliteStatus) {
 			defer wg.Done()
-			// Replace with actual health check logic (e.g., TCP ping or endpoint check)
 			conn, err := net.DialTimeout("tcp", sat.IP+":9050", 5*time.Second)
-			lb.mu.Lock() // Lock when modifying the satellite's data
+			lb.mu.Lock()
+			defer lb.mu.Unlock()
 			if err != nil {
 				sat.Healthy = false
-				lb.logger.Error("Health check failed", zap.String("zeroTierIP", sat.IP), zap.Error(err))
-			} else {
-				sat.Healthy = true
-				sat.LastHealthCheck = time.Now()
-				lb.logger.Info("Health check passed", zap.String("zeroTierIP", sat.IP))
-				err := conn.Close()
-				if err != nil {
-					return
-				}
+				lb.logger.Error("Health check failed: Unable to dial satellite", zap.String("zeroTierIP", sat.IP), zap.Error(err))
+				return
 			}
-			lb.mu.Unlock()
+			conn.Close() // Close the initial connection
+
+			// Send a test payload by making an HTTP GET request to api.ipify.org
+			resp, err := http.Get("https://api.ipify.org")
+			if err != nil || resp.StatusCode != http.StatusOK {
+				sat.Healthy = false
+				lb.logger.Error("Health check failed: Unable to reach test payload endpoint", zap.String("zeroTierIP", sat.IP), zap.Error(err))
+				if resp != nil {
+					resp.Body.Close()
+				}
+				return
+			}
+			resp.Body.Close() // Close the response body
+
+			// If the satellite is responsive, mark it as healthy
+			sat.Healthy = true
+			sat.LastHealthCheck = time.Now()
+			lb.logger.Info("Health check passed", zap.String("zeroTierIP", sat.IP))
 		}(satellite)
 	}
 	wg.Wait()
