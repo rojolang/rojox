@@ -44,7 +44,7 @@ func Run() {
 func startListener(lb *server.LoadBalancer) {
 	for {
 		logrus.Info("Listening for incoming connections")
-		listener, err := net.Listen("tcp", ":1080")
+		listener, err := net.Listen("tcp", ":9050")
 		if err != nil {
 			logrus.WithFields(logrus.Fields{"context": "listening for connections"}).Error(err)
 			return

@@ -101,6 +101,7 @@ func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn ne
 	ip, _, err := net.SplitHostPort(conn.RemoteAddr().String())
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
+			"context":     "HandleConnection",
 			"event":       "split_host_port_error",
 			"local_addr":  conn.LocalAddr().String(),
 			"remote_addr": conn.RemoteAddr().String(),
@@ -110,24 +111,28 @@ func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn ne
 
 	if !isZeroTierIP(ip, conn) {
 		// If it's not a ZeroTier IP, close the connection
-		logrus.WithField("address", conn.RemoteAddr().String()).Info("Rejected connection from non-ZeroTier IP")
+		logrus.WithFields(logrus.Fields{
+			"context":     "HandleConnection",
+			"event":       "rejected_non_zerotier_ip",
+			"remote_addr": conn.RemoteAddr().String(),
+		}).Warn("Rejected connection from non-ZeroTier IP")
 		return
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"event":       "zerotier_connection",
+		"context":     "HandleConnection",
+		"event":       "accepted_zerotier_connection",
 		"local_addr":  conn.LocalAddr().String(),
 		"remote_addr": conn.RemoteAddr().String(),
 		"zerotier_ip": ip,
 	}).Info("Accepted connection from ZeroTier IP")
 
-	// Create a buffered reader for the connection
 	reader := bufio.NewReader(conn)
 
-	// Check for gzip header
 	header, err := reader.Peek(2)
-	if err != nil {
+	if err != nil && err != io.EOF {
 		logrus.WithFields(logrus.Fields{
+			"context":     "HandleConnection",
 			"event":       "peek_header_error",
 			"local_addr":  conn.LocalAddr().String(),
 			"remote_addr": conn.RemoteAddr().String(),
@@ -135,13 +140,18 @@ func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn ne
 		return
 	}
 
-	// If the data is compressed, create a gzip reader
-	if header[0] == 0x1f && header[1] == 0x8b {
-		logrus.WithField("address", conn.RemoteAddr().String()).Info("Gzip header detected") // Added info print
+	if len(header) == 2 && header[0] == 0x1f && header[1] == 0x8b {
+		logrus.WithFields(logrus.Fields{
+			"context":     "HandleConnection",
+			"event":       "gzip_header_detected",
+			"remote_addr": conn.RemoteAddr().String(),
+		}).Info("Gzip header detected, creating gzip reader")
+
 		gzipReader, err := gzip.NewReader(reader)
 		if err != nil {
 			atomic.AddInt64(&m.totalFailedConnections, 1)
 			logrus.WithFields(logrus.Fields{
+				"context":     "HandleConnection",
 				"event":       "gzip_reader_error",
 				"local_addr":  conn.LocalAddr().String(),
 				"remote_addr": conn.RemoteAddr().String(),
@@ -152,13 +162,12 @@ func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn ne
 		reader = bufio.NewReader(gzipReader)
 	}
 
-	// Create a new connection from the buffered reader
-	conn = &connWithReader{conn, reader}
+	connWithReader := &connWithReader{Conn: conn, reader: reader}
 
-	// Serve the connection
-	if err := socksServer.ServeConn(conn); err != nil {
+	if err := socksServer.ServeConn(connWithReader); err != nil {
 		atomic.AddInt64(&m.totalFailedConnections, 1)
 		logrus.WithFields(logrus.Fields{
+			"context":     "HandleConnection",
 			"event":       "serve_connection_error",
 			"local_addr":  conn.LocalAddr().String(),
 			"remote_addr": conn.RemoteAddr().String(),
@@ -167,6 +176,7 @@ func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn ne
 		atomic.AddInt64(&m.totalSuccessfulConnections, 1)
 		atomic.AddInt64(&m.totalRequests, 1)
 		logrus.WithFields(logrus.Fields{
+			"context":     "HandleConnection",
 			"event":       "serve_connection_success",
 			"local_addr":  conn.LocalAddr().String(),
 			"remote_addr": conn.RemoteAddr().String(),

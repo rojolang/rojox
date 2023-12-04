@@ -27,7 +27,8 @@ type SimpleDialer struct{}
 
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
 	logrus.WithFields(logrus.Fields{"network": network, "address": address}).Info("Dialing...")
-	return net.Dial(network, address)
+	// Ensure we are using IPv6 by replacing the network argument with "tcp6"
+	return net.Dial("tcp6", address)
 }
 
 func getZeroTierIP() (string, error) {
