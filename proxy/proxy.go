@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/armon/go-socks5"
 	"github.com/rojolang/rojox/satellite"
+
 	"github.com/sirupsen/logrus"
 	"go.uber.org/zap"
 	"io"
