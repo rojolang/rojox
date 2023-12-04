@@ -25,18 +25,28 @@ func (e *ErrorWithContext) Error() string {
 }
 
 // Run starts the UX server with the given LoadBalancer.
-// Run starts the UX server with the given LoadBalancer.
 func Run(lb *server.LoadBalancer) {
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
 
+	// Set up the registration handler.
 	http.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
 		registerHandler(logger, w, r, lb) // Pass the LoadBalancer instance to the handler
 	})
 
-	listenAddress := "0.0.0.0:8080" // Replace with the specific IP if necessary.
+	// Start the HTTP server on a separate port for registration.
+	httpServer := startHTTPServer(":8080", logger)
+
+	// Start listening for SOCKS connections on port 9050.
+	go startListener(":9050", lb, logger)
+
+	// Wait for termination signals and pass the httpServer to handleTerminationSignals.
+	handleTerminationSignals(httpServer, logger)
+}
+
+func startHTTPServer(listenAddress string, logger *zap.Logger) *http.Server {
 	logger.Info("Starting HTTP server on " + listenAddress)
-	httpServer := &http.Server{ // Renamed variable to httpServer
+	httpServer := &http.Server{
 		Addr:    listenAddress,
 		Handler: nil, // Default ServeMux.
 	}
@@ -55,34 +65,25 @@ func Run(lb *server.LoadBalancer) {
 		}
 	}()
 
-	// Call the handleTerminationSignals function to handle graceful shutdown.
-	handleTerminationSignals(httpServer, logger) // Corrected to pass httpServer
+	return httpServer
 }
 
-func startListener(logger *zap.Logger, lb *server.LoadBalancer) {
-	for {
-		logger.Info("Listening for incoming connections")
-		listener, err := net.Listen("tcp", ":9050")
-		if err != nil {
-			logger.Error("listening for connections", zap.Error(err))
-			return
-		}
-		defer func(listener net.Listener) {
-			err := listener.Close()
-			if err != nil {
-				logger.Error("closing listener", zap.Error(err))
-			}
-		}(listener)
+func startListener(listenAddress string, lb *server.LoadBalancer, logger *zap.Logger) {
+	logger.Info("Listening for incoming SOCKS connections on " + listenAddress)
+	listener, err := net.Listen("tcp", listenAddress)
+	if err != nil {
+		logger.Fatal("Failed to set up SOCKS listener", zap.Error(err))
+		return
+	}
+	defer listener.Close()
 
-		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				logger.Error("accepting connection", zap.Error(err))
-				break
-			}
-			go lb.HandleConnection(conn)
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			logger.Error("Accepting SOCKS connection", zap.Error(err))
+			break
 		}
-		time.Sleep(1 * time.Second) // If the listener breaks, wait a second before retrying
+		go lb.HandleConnection(conn)
 	}
 }
 
