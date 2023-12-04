@@ -229,52 +229,31 @@ func registerWithUXServer(uxServerIP string) error {
 
 // getIPv6Address retrieves the preferred global unicast IPv6 address of the system.
 func getIPv6Address() (net.IP, error) {
-	logrus.Info("Retrieving global unicast IPv6 address for eth0")
-	ifaces, err := net.Interfaces()
+	logrus.Info("Retrieving global unicast IPv6 address for usb0")
+	iface, err := net.InterfaceByName("usb0")
 	if err != nil {
-		logrus.WithError(err).Error("Failed to get network interfaces")
+		logrus.WithError(err).Error("Failed to get usb0 network interface")
 		return nil, err
 	}
 
-	var eth0IPv6 net.IP
-	for _, iface := range ifaces {
-		logrus.WithField("interface", iface.Name).Debug("Checking interface")
+	addrs, err := iface.Addrs()
+	if err != nil {
+		logrus.WithError(err).Error("Failed to get addresses for interface usb0")
+		return nil, err
+	}
 
-		if iface.Name != "eth0" {
+	for _, addr := range addrs {
+		ipNet, ok := addr.(*net.IPNet)
+		if !ok {
 			continue
 		}
-
-		addrs, err := iface.Addrs()
-		if err != nil {
-			logrus.WithError(err).Error("Failed to get addresses for interface eth0")
-			continue
-		}
-
-		for _, addr := range addrs {
-			logrus.WithField("address", addr.String()).Debug("Found address for eth0")
-
-			ipNet, ok := addr.(*net.IPNet)
-			if !ok {
-				continue
-			}
-
-			ip := ipNet.IP
-			if ip.To4() != nil {
-				logrus.WithField("ipv4", ip.String()).Debug("Ignoring IPv4 address for eth0")
-				continue
-			}
-
-			if ip.IsGlobalUnicast() {
-				logrus.WithField("ipv6", ip.String()).Debug("Found global unicast IPv6 address for eth0")
-				eth0IPv6 = ip
-			}
+		ip := ipNet.IP
+		if ip.To4() == nil && ip.IsGlobalUnicast() {
+			// Found a global unicast IPv6 address.
+			logrus.WithField("ipv6", ip.String()).Info("Global unicast IPv6 address found for usb0")
+			return ip, nil
 		}
 	}
 
-	if eth0IPv6 == nil {
-		return nil, errors.New("eth0 interface has no global unicast IPv6 address")
-	}
-
-	logrus.WithField("selectedIPv6", eth0IPv6.String()).Info("Selected IPv6 address for eth0")
-	return eth0IPv6, nil
+	return nil, errors.New("usb0 interface has no global unicast IPv6 address")
 }

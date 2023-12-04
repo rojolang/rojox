@@ -57,7 +57,7 @@ func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.C
 }
 
 // getEth0IP retrieves the preferred IPv6 address of the eth0 interface.
-// getEth0IP retrieves the preferred IPv6 address of the eth0 interface.
+
 // getEth0IP retrieves the IPv6 address of the eth0 interface.
 func getEth0IP() (net.IP, error) {
 	ifaces, err := net.Interfaces()
