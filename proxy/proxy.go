@@ -301,6 +301,7 @@ func (m *ConnectionManager) HandleConnection(socksServer *socks5.Server, conn ne
 
 	// The socksServer.ServeConn method will handle the SOCKS5 protocol negotiation,
 	// including forwarding the connection to the requested destination.
+	// Ensure that the socksServer is configured to use our SimpleDialer for outbound connections.
 	if err := socksServer.ServeConn(conn); err != nil {
 		atomic.AddInt64(&m.totalFailedConnections, 1)
 		logrus.WithFields(logrus.Fields{
