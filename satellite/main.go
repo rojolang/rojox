@@ -68,7 +68,7 @@ func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.C
 }
 
 func getZeroTierIP(logger *zap.Logger) (string, error) {
-	cmd := exec.Command("zerotier-cli", "listnetworks")
+	cmd := exec.Command("sudo", "zerotier-cli", "listnetworks")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
