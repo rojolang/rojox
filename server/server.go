@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 	"errors"
-	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 	"io"
 	"net"
 	"sync"
@@ -23,15 +23,18 @@ type LoadBalancer struct {
 	wg           sync.WaitGroup
 	connChan     chan net.Conn // Buffered channel for handling connections
 	shutdownChan chan struct{} // Channel to signal shutdown
+	logger       *zap.Logger
 }
 
 // NewLoadBalancer creates a new LoadBalancer instance with a buffered channel.
 func NewLoadBalancer(bufferSize int, healthCheckInterval time.Duration) *LoadBalancer {
+	logger, _ := zap.NewProduction() // Replace with zap.NewDevelopment() for development
 	lb := &LoadBalancer{
 		connChan:     make(chan net.Conn, bufferSize),
 		shutdownChan: make(chan struct{}),
+		logger:       logger,
 	}
-	logrus.Info("Creating new LoadBalancer")
+	lb.logger.Info("Creating new LoadBalancer")
 	go lb.handleConnections()
 	go lb.scheduleHealthChecks(healthCheckInterval)
 	return lb
@@ -39,7 +42,7 @@ func NewLoadBalancer(bufferSize int, healthCheckInterval time.Duration) *LoadBal
 
 func (lb *LoadBalancer) RegisterSatellite(zeroTierIP string) {
 	if zeroTierIP == "" {
-		logrus.Error("Cannot register satellite: IP is empty")
+		lb.logger.Error("Cannot register satellite: IP is empty")
 		return
 	}
 
@@ -48,7 +51,7 @@ func (lb *LoadBalancer) RegisterSatellite(zeroTierIP string) {
 
 	for _, satellite := range lb.satellites {
 		if satellite.IP == zeroTierIP {
-			logrus.WithField("zeroTierIP", zeroTierIP).Info("Satellite already registered")
+			lb.logger.Info("Satellite already registered", zap.String("zeroTierIP", zeroTierIP))
 			return
 		}
 	}
@@ -60,7 +63,7 @@ func (lb *LoadBalancer) RegisterSatellite(zeroTierIP string) {
 		Healthy:         true,
 	}
 	lb.satellites = append(lb.satellites, newSatellite)
-	logrus.WithField("zeroTierIP", zeroTierIP).Info("Registered new satellite")
+	lb.logger.Info("Registered new satellite", zap.String("zeroTierIP", zeroTierIP))
 }
 
 // performHealthChecks runs health checks on all satellites concurrently.
@@ -80,12 +83,15 @@ func (lb *LoadBalancer) performHealthChecks() {
 			lb.mu.Lock() // Lock when modifying the satellite's data
 			if err != nil {
 				sat.Healthy = false
-				logrus.WithFields(logrus.Fields{"zeroTierIP": sat.IP, "error": err}).Error("Health check failed")
+				lb.logger.Error("Health check failed", zap.String("zeroTierIP", sat.IP), zap.Error(err))
 			} else {
 				sat.Healthy = true
 				sat.LastHealthCheck = time.Now()
-				logrus.WithField("zeroTierIP", sat.IP).Info("Health check passed")
-				conn.Close()
+				lb.logger.Info("Health check passed", zap.String("zeroTierIP", sat.IP))
+				err := conn.Close()
+				if err != nil {
+					return
+				}
 			}
 			lb.mu.Unlock()
 		}(satellite)
@@ -103,7 +109,7 @@ func (lb *LoadBalancer) scheduleHealthChecks(interval time.Duration) {
 		case <-ticker.C:
 			lb.performHealthChecks()
 		case <-lb.shutdownChan:
-			logrus.Info("Stopping scheduled health checks")
+			lb.logger.Info("Stopping scheduled health checks")
 			return
 		}
 	}
@@ -163,7 +169,7 @@ func (lb *LoadBalancer) handleConnections() {
 			lb.handleSingleConnection(c)
 		}(conn)
 	}
-	logrus.Info("Stopped handling connections")
+	lb.logger.Info("Stopped handling connections")
 }
 
 // HandleConnection enqueues an incoming connection to the buffered channel.
@@ -173,22 +179,27 @@ func (lb *LoadBalancer) HandleConnection(conn net.Conn) {
 
 // handleSingleConnection handles a single connection from the buffered channel.
 func (lb *LoadBalancer) handleSingleConnection(conn net.Conn) {
-	defer conn.Close()
+	defer func(conn net.Conn) {
+		err := conn.Close()
+		if err != nil {
+			lb.logger.Error("Failed to close client connection", zap.Error(err))
+		}
+	}(conn)
 
 	satellite, err := lb.NextSatellite()
 	if err != nil {
-		logrus.WithField("error", err).Error("Failed to get next satellite")
+		lb.logger.Error("Failed to get next satellite", zap.Error(err))
 		return
 	}
 
 	satelliteConn, err := net.DialTimeout("tcp", satellite.IP+":9050", 5*time.Second)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{"zeroTierIP": satellite.IP, "error": err}).Error("Failed to connect to satellite")
+		lb.logger.Error("Failed to connect to satellite", zap.String("zeroTierIP", satellite.IP), zap.Error(err))
 		return
 	}
 	defer func() {
 		if err := satelliteConn.Close(); err != nil {
-			logrus.WithFields(logrus.Fields{"zeroTierIP": satellite.IP, "error": err}).Error("Failed to close satellite connection")
+			lb.logger.Error("Failed to close satellite connection", zap.String("zeroTierIP", satellite.IP), zap.Error(err))
 		}
 	}()
 
@@ -202,19 +213,19 @@ func (lb *LoadBalancer) handleSingleConnection(conn net.Conn) {
 		lb.mu.Unlock()
 	}()
 
-	go copyData(conn, satelliteConn)
-	go copyData(satelliteConn, conn)
+	go copyData(conn, satelliteConn, lb.logger)
+	go copyData(satelliteConn, conn, lb.logger)
 }
 
-// copyData copies data between two connections.
-func copyData(dst net.Conn, src net.Conn) {
+// copyData copies data between two connections and logs errors if they occur.
+func copyData(dst net.Conn, src net.Conn, logger *zap.Logger) {
 	if _, err := io.Copy(dst, src); err != nil {
-		logrus.WithField("error", err).Error("Failed to copy data between connections")
+		logger.Error("Failed to copy data between connections", zap.Error(err))
 	}
 	if err := dst.Close(); err != nil {
-		logrus.WithField("error", err).Error("Failed to close destination connection")
+		logger.Error("Failed to close destination connection", zap.Error(err))
 	}
 	if err := src.Close(); err != nil {
-		logrus.WithField("error", err).Error("Failed to close source connection")
+		logger.Error("Failed to close source connection", zap.Error(err))
 	}
 }

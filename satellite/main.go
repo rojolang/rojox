@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -116,6 +117,7 @@ func Run() {
 		logger.Fatal("Failed to get ZeroTier IP", zap.Error(err))
 	}
 
+	// Use the ZeroTier IP for registration
 	if err := registerWithUXServer(UXServerIP, zeroTierIPString, logger); err != nil {
 		logger.Fatal("Failed to register with UX server", zap.Error(err))
 	}
@@ -200,38 +202,51 @@ func handleTerminationSignals(httpServer *http.Server, listener net.Listener, lo
 }
 
 func registerWithUXServer(uxServerIP, zeroTierIP string, logger *zap.Logger) error {
+	logger.Debug("Satellite registerWithUXServer function started")
 	for i := 0; i < 3; i++ {
+		logger.Info("Registering IP", zap.String("ip", zeroTierIP))
+
 		reqBody, err := json.Marshal(map[string]string{"ip": zeroTierIP})
 		if err != nil {
-			logger.Error("Failed to marshal registration request body", zap.Error(err))
+			logger.Error("Creating register request failed", zap.Error(err))
 			time.Sleep(1 * time.Second)
 			continue
 		}
-
 		req, err := http.NewRequest("POST", uxServerIP, bytes.NewBuffer(reqBody))
 		if err != nil {
-			logger.Error("Failed to create new HTTP request for registration", zap.Error(err))
+			logger.Error("Creating new request failed", zap.Error(err))
 			time.Sleep(1 * time.Second)
 			continue
 		}
 		req.Header.Set("Content-Type", "application/json")
 
+		logger.Info("Sending registration request", zap.Any("request", req))
+
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
-			logger.Error("Failed to send registration request", zap.Error(err))
+			logger.Error("Sending register request failed", zap.Error(err))
 			time.Sleep(1 * time.Second)
 			continue
 		}
-		resp.Body.Close()
+		defer func(Body io.ReadCloser) {
+			err := Body.Close()
+			if err != nil {
+				logger.Error("Closing response body failed", zap.Error(err))
+			}
+		}(resp.Body)
 
-		if resp.StatusCode == http.StatusOK {
-			logger.Info("Successfully registered with UX server", zap.String("ip", zeroTierIP))
-			return nil
-		} else {
-			logger.Error("Registration failed", zap.Int("statusCode", resp.StatusCode), zap.String("ip", zeroTierIP))
+		logger.Info("Received registration response", zap.Any("response", resp))
+
+		if resp.StatusCode != http.StatusOK {
+			err = fmt.Errorf("registration failed: status code %d", resp.StatusCode)
+			logger.Error("Register response failed", zap.Error(err))
 			time.Sleep(1 * time.Second)
+			continue
 		}
-	}
 
+		logger.Info("Successfully registered with UX server")
+		return nil
+	}
+	logger.Debug("Satellite registerWithUXServer function finished")
 	return fmt.Errorf("registration failed after 3 attempts")
 }
