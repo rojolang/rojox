@@ -135,7 +135,7 @@ func Run() {
 	manager := proxy.NewConnectionManager(dialer)
 
 	// Setup the SOCKS5 server with the custom Dial function from our SimpleDialer
-	socksServer, err := utils.SetupSocks5Server()
+	socksServer, err := utils.SetupSocks5Server(dialer)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{"context": "setting up SOCKS5 server"}).Fatal(err)
 	}
