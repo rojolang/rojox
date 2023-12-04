@@ -6,6 +6,7 @@ import (
 	"go.uber.org/zap"
 	"io"
 	"net"
+	"net/http"
 	"sync"
 	"time"
 )
@@ -80,34 +81,56 @@ func (lb *LoadBalancer) performHealthChecks() {
 		wg.Add(1)
 		go func(sat *SatelliteStatus) {
 			defer wg.Done()
-			// Log the start of the health check for the satellite.
-			lb.logger.Info("Starting health check for satellite", zap.String("zeroTierIP", sat.IP))
+			lb.logger.Info("Starting health check", zap.String("satellite", sat.IP))
 
-			// Attempt a TCP connection to the satellite's service port.
+			// Attempt to establish a connection to the satellite's service port.
 			conn, err := net.DialTimeout("tcp", sat.IP+":9050", 5*time.Second)
 			if err != nil {
 				lb.mu.Lock()
 				sat.Healthy = false
 				lb.mu.Unlock()
-				lb.logger.Error("Health check failed: Unable to dial satellite",
-					zap.String("zeroTierIP", sat.IP),
-					zap.Error(err))
+				lb.logger.Error("Health check failed: Unable to establish TCP connection",
+					zap.String("satellite", sat.IP), zap.Error(err))
 				return
 			}
-			lb.logger.Info("Successfully connected to satellite for health check",
-				zap.String("zeroTierIP", sat.IP),
-				zap.String("localAddr", conn.LocalAddr().String()),
-				zap.String("remoteAddr", conn.RemoteAddr().String()))
-			conn.Close() // Close the connection immediately after establishing it.
+			conn.Close() // We close the connection immediately for this health check.
 
-			// Optionally, perform additional checks here if needed.
+			// Send a test request to an external service like `api.ipify.org`.
+			resp, err := http.Get("https://api.ipify.org")
+			if err != nil {
+				lb.mu.Lock()
+				sat.Healthy = false
+				lb.mu.Unlock()
+				lb.logger.Error("Health check failed: Unable to reach external service",
+					zap.String("satellite", sat.IP), zap.Error(err))
+				return
+			}
+			defer resp.Body.Close()
 
-			// Log the successful health check.
-			lb.mu.Lock()
-			sat.Healthy = true
-			sat.LastHealthCheck = time.Now()
-			lb.mu.Unlock()
-			lb.logger.Info("Health check passed", zap.String("zeroTierIP", sat.IP))
+			// Read the response body to log it.
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				lb.logger.Error("Health check failed: Unable to read response body",
+					zap.String("satellite", sat.IP), zap.Error(err))
+			} else {
+				lb.logger.Info("Health check response from external service",
+					zap.String("satellite", sat.IP), zap.ByteString("response", body))
+			}
+
+			// Mark the satellite as healthy if we got a successful response.
+			if resp.StatusCode == http.StatusOK {
+				lb.mu.Lock()
+				sat.Healthy = true
+				sat.LastHealthCheck = time.Now()
+				lb.mu.Unlock()
+				lb.logger.Info("Health check passed", zap.String("satellite", sat.IP))
+			} else {
+				lb.mu.Lock()
+				sat.Healthy = false
+				lb.mu.Unlock()
+				lb.logger.Error("Health check failed: External service returned non-OK status",
+					zap.String("satellite", sat.IP), zap.Int("status", resp.StatusCode))
+			}
 		}(satellite)
 	}
 	wg.Wait()
