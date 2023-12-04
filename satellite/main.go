@@ -27,26 +27,33 @@ type SimpleDialer struct{}
 
 // Dial dials out using the satellite's global unicast IPv6 address.
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
+	// Fetch the preferred global unicast IPv6 address.
 	ipv6Addr, err := getIPv6Address()
 	if err != nil {
 		logrus.WithError(err).Error("Failed to get IPv6 address")
 		return nil, err
 	}
 
-	localAddr := &net.TCPAddr{IP: ipv6Addr}
+	// Create a dialer with the IPv6 address as the local address.
 	dialer := net.Dialer{
-		LocalAddr: localAddr,
+		LocalAddr: &net.TCPAddr{IP: ipv6Addr},
+	}
+
+	// Dial using the IPv6 address.
+	conn, err := dialer.DialContext(ctx, "tcp6", address)
+	if err != nil {
+		logrus.WithError(err).Error("Failed to dial using IPv6 address")
+		return nil, err
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"network":   network,
-		"address":   address,
-		"localAddr": localAddr,
-	}).Info("Dialing out using IPv6")
+		"localIPv6": ipv6Addr,
+		"remote":    address,
+	}).Info("Dialed successfully using IPv6")
 
-	// Use the DialContext method to make the outbound connection using the IPv6 address.
-	return dialer.DialContext(ctx, network, address)
+	return conn, nil
 }
+
 func getZeroTierIP() (string, error) {
 	cmd := exec.Command("zerotier-cli", "listnetworks")
 	var stdout, stderr bytes.Buffer
@@ -217,32 +224,34 @@ func registerWithUXServer(uxServerIP string) error {
 
 // getIPv6Address retrieves the preferred global unicast IPv6 address of the system.
 func getIPv6Address() (net.IP, error) {
-	// Fetch all network interfaces.
+	logrus.Info("Retrieving global unicast IPv6 address for eth0")
 	ifaces, err := net.Interfaces()
 	if err != nil {
+		logrus.WithError(err).Error("Failed to get network interfaces")
 		return nil, err
 	}
-
-	// Iterate over all interfaces to find a global unicast IPv6 address.
 	for _, iface := range ifaces {
+		// Log each interface and its addresses for debugging.
+		logrus.WithField("interface", iface.Name).Debug("Checking interface")
 		addrs, err := iface.Addrs()
 		if err != nil {
-			continue // If we can't get addresses for an interface, skip it.
+			logrus.WithError(err).WithField("interface", iface.Name).Error("Failed to get addresses")
+			continue
 		}
-
-		// Check all addresses for a global unicast IPv6 address.
 		for _, addr := range addrs {
+			logrus.WithField("address", addr.String()).Debug("Found address")
 			ipNet, ok := addr.(*net.IPNet)
-			if !ok {
-				continue
+			if !ok || ipNet.IP.To4() != nil {
+				continue // Skip non-IPv6 and non-global unicast addresses.
 			}
-			ip := ipNet.IP
-			if ip.To4() == nil && ip.IsGlobalUnicast() {
-				// Found a global unicast IPv6 address.
-				return ip, nil
+			if iface.Name == "eth0" && ipNet.IP.IsGlobalUnicast() {
+				logrus.WithFields(logrus.Fields{
+					"interface": "eth0",
+					"ipv6":      ipNet.IP.String(),
+				}).Info("Using IPv6 address for eth0")
+				return ipNet.IP, nil
 			}
 		}
 	}
-
-	return nil, errors.New("no global unicast IPv6 address found")
+	return nil, errors.New("eth0 interface has no global unicast IPv6 address")
 }
