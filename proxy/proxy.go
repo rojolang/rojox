@@ -25,8 +25,6 @@ type SimpleDialer struct{}
 
 // Dial creates a network connection using the specified network, address, and context.
 // It binds to the local address of the eth0 interface for outgoing connections.
-// Dial creates a network connection using the specified network, address, and context.
-// It binds to the local address of the eth0 interface for outgoing connections.
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
 	localIP, err := getEth0IP()
 	if err != nil {
@@ -34,51 +32,92 @@ func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.C
 		return nil, err
 	}
 
-	localAddr := &net.TCPAddr{IP: localIP, Port: 0} // Port 0 means any available port
+	// Create a net.Dialer that will use the local IP address of eth0 for the source address.
 	dialer := &net.Dialer{
-		LocalAddr: localAddr,
+		LocalAddr: &net.TCPAddr{IP: localIP, Port: 0}, // Use eth0 IP and an ephemeral port.
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"network":   network,
-		"address":   address,
-		"localAddr": localAddr,
-	}).Info("Dialing with local address")
-
+	// Dial the destination address using the specified network and context.
 	conn, err := dialer.DialContext(ctx, network, address)
 	if err != nil {
-		logrus.WithError(err).Error("Failed to dial address")
+		logrus.WithError(err).Error("Failed to dial address using eth0")
 		return nil, err
 	}
 
+	// Verbose logging after successful connection.
 	logrus.WithFields(logrus.Fields{
-		"network": network,
-		"address": address,
-	}).Info("Successfully dialed")
+		"localIP":       localIP.String(),
+		"localPort":     conn.LocalAddr().(*net.TCPAddr).Port,
+		"remoteAddr":    conn.RemoteAddr().String(),
+		"network":       network,
+		"dialerAddress": address,
+	}).Info("Successfully established connection")
 
 	return conn, nil
 }
 
-// getEth0IP retrieves the first IPv4 address of the eth0 interface.
+// getEth0IP retrieves the preferred IPv6 address of the eth0 interface.
 func getEth0IP() (net.IP, error) {
+	logrus.Info("Retrieving IP addresses for all network interfaces")
 	ifaces, err := net.Interfaces()
 	if err != nil {
+		logrus.WithError(err).Error("Failed to get network interfaces")
 		return nil, err
 	}
+
+	var eth0IPv6 net.IP
 	for _, iface := range ifaces {
-		if iface.Name == "eth0" {
-			addrs, err := iface.Addrs()
-			if err != nil {
-				return nil, err
+		logrus.WithFields(logrus.Fields{
+			"interface": iface.Name,
+			"flags":     iface.Flags,
+		}).Info("Checking network interface")
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			logrus.WithError(err).WithField("interface", iface.Name).Error("Failed to get addresses for interface")
+			continue // Log the error and continue checking the next interface.
+		}
+
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
 			}
-			for _, addr := range addrs {
-				if ipnet, ok := addr.(*net.IPNet); ok && ipnet.IP.To4() != nil {
-					return ipnet.IP, nil
-				}
+
+			if ip == nil {
+				continue
+			}
+
+			ipType := "IPv6"
+			if ip.To4() != nil {
+				ipType = "IPv4"
+			}
+
+			logrus.WithFields(logrus.Fields{
+				"interface": iface.Name,
+				"address":   ip.String(),
+				"type":      ipType,
+			}).Info("Found IP address for interface")
+
+			// Prefer global unicast IPv6 address.
+			if iface.Name == "eth0" && ipType == "IPv6" && ip.IsGlobalUnicast() {
+				eth0IPv6 = ip
 			}
 		}
 	}
-	return nil, fmt.Errorf("eth0 interface not found or has no IPv4 address")
+
+	if eth0IPv6 != nil {
+		logrus.WithFields(logrus.Fields{
+			"interface": "eth0",
+			"ipv6":      eth0IPv6.String(),
+		}).Info("Found preferred IPv6 address for eth0")
+		return eth0IPv6, nil
+	}
+
+	return nil, fmt.Errorf("eth0 interface not found or has no preferred IPv6 address")
 }
 
 // ConnectionManager manages and monitors network connections.
