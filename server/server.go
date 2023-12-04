@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"github.com/rojolang/rojox/proxy"
 	"go.uber.org/zap"
 	"io"
 	"net"
@@ -25,15 +26,26 @@ type LoadBalancer struct {
 	connChan     chan net.Conn // Buffered channel for handling connections
 	shutdownChan chan struct{} // Channel to signal shutdown
 	logger       *zap.Logger
+	manager      *proxy.ConnectionManager
+}
+
+// GetConnectionManager returns the ConnectionManager associated with the LoadBalancer.
+func (lb *LoadBalancer) GetConnectionManager() *proxy.ConnectionManager {
+	return lb.manager
 }
 
 // NewLoadBalancer creates a new LoadBalancer instance with a buffered channel.
 func NewLoadBalancer(bufferSize int, healthCheckInterval time.Duration) *LoadBalancer {
 	logger, _ := zap.NewProduction() // Replace with zap.NewDevelopment() for development
+
+	// Initialize the ConnectionManager.
+	manager := proxy.NewConnectionManager(&proxy.SimpleDialer{})
+
 	lb := &LoadBalancer{
 		connChan:     make(chan net.Conn, bufferSize),
 		shutdownChan: make(chan struct{}),
 		logger:       logger,
+		manager:      manager, // Set the ConnectionManager field
 	}
 	lb.logger.Info("Creating new LoadBalancer")
 	go lb.handleConnections()
