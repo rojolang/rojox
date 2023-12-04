@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/armon/go-socks5"
 	"github.com/rojolang/rojox/proxy"
+	"github.com/rojolang/rojox/satellite"
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/mem"
 	"github.com/sirupsen/logrus"
@@ -17,7 +18,7 @@ import (
 // It returns the SOCKS5 server or an error if there was an issue setting it up.
 func SetupSocks5Server() (*socks5.Server, error) {
 	// Create an instance of SimpleDialer from the proxy package that prefers IPv6.
-	dialer := &proxy.SimpleDialer{} // Use the proxy package qualifier
+	dialer := &satellite.SimpleDialer{} // Use the proxy package qualifier
 
 	// Create a socks5.Config and pass the SimpleDialer to it.
 	conf := &socks5.Config{
