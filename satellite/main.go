@@ -35,37 +35,43 @@ type SimpleDialer struct{}
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to split network address: %w", err)
 	}
 
 	ips, err := net.LookupIP(host)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to look up IP for host: %w", err)
 	}
 
 	var dialAddr string
+	var conn net.Conn
+	dialer := &net.Dialer{}
+
+	// Iterate over the IPs and select the first IPv6 address found.
 	for _, ip := range ips {
 		if ip.To4() == nil && ip.IsGlobalUnicast() {
+			// Use the IPv6 address if available.
 			dialAddr = net.JoinHostPort(ip.String(), port)
-			network = "tcp6"
-			break
+			conn, err = dialer.DialContext(ctx, "tcp6", dialAddr)
+			if err == nil {
+				return conn, nil
+			}
+			// Log the error and try the next IP if IPv6 connection fails.
+			zap.L().Error("failed to dial IPv6", zap.Error(err), zap.String("address", dialAddr))
 		}
 	}
 
+	// If no IPv6 addresses are available or all attempts fail, fall back to IPv4.
 	if dialAddr == "" {
-		dialAddr = address
-		network = "tcp4"
-	}
-
-	dialer := &net.Dialer{}
-	conn, err := dialer.DialContext(ctx, network, dialAddr)
-	if err != nil {
-		return nil, err
+		dialAddr = net.JoinHostPort(host, port)
+		conn, err = dialer.DialContext(ctx, "tcp4", dialAddr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to dial IPv4: %w", err)
+		}
 	}
 
 	return conn, nil
 }
-
 func getZeroTierIP(logger *zap.Logger) (string, error) {
 	cmd := exec.Command("sudo", "zerotier-cli", "listnetworks")
 	var stdout, stderr bytes.Buffer
