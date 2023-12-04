@@ -25,34 +25,37 @@ type SimpleDialer struct{}
 // It prefers IPv6 and falls back to IPv4 on the usb0 interface for outgoing connections.
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
 	logrus.Debug("Entering SimpleDialer.Dial method")
-	var localAddr net.Addr
+	var conn net.Conn
 	var err error
 
-	// Attempt to use the IPv6 address of usb0. If not available, fall back to IPv4.
-	ipv6Addr, ipv4Addr := getUSB0Addresses()
+	// Attempt to dial using IPv6 first.
+	ipv6Addr, _ := getUSB0IPv6() // Only interested in IPv6 for the first attempt.
 	if ipv6Addr != nil {
-		localAddr = &net.TCPAddr{IP: ipv6Addr, Port: 0}
-		network = "tcp6"
-	} else if ipv4Addr != nil {
-		localAddr = &net.TCPAddr{IP: ipv4Addr, Port: 0}
-		network = "tcp4"
-	} else {
-		errMsg := "usb0 interface does not have a valid IPv6 or IPv4 address"
-		logrus.Error(errMsg)
-		return nil, fmt.Errorf(errMsg)
+		localAddr := &net.TCPAddr{IP: ipv6Addr, Port: 0}
+		dialer := &net.Dialer{
+			LocalAddr: localAddr,
+		}
+		network = "tcp6" // Force IPv6
+		conn, err = dialer.DialContext(ctx, network, address)
 	}
 
-	dialer := &net.Dialer{
-		LocalAddr: localAddr,
+	// If IPv6 dialing failed, fall back to IPv4.
+	if err != nil {
+		logrus.WithError(err).Debug("Failed to dial using IPv6, falling back to IPv4")
+		ipv4Addr, _ := getUSB0IPv4() // Only interested in IPv4 for the fallback.
+		if ipv4Addr != nil {
+			localAddr := &net.TCPAddr{IP: ipv4Addr, Port: 0}
+			dialer := &net.Dialer{
+				LocalAddr: localAddr,
+			}
+			network = "tcp4" // Force IPv4
+			conn, err = dialer.DialContext(ctx, network, address)
+		} else {
+			logrus.WithError(err).Error("Failed to get usb0 IPv4 address")
+			return nil, err
+		}
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"network":   network,
-		"address":   address,
-		"localAddr": localAddr,
-	}).Info("Dialing out using usb0")
-
-	conn, err := dialer.DialContext(ctx, network, address)
 	if err != nil {
 		logrus.WithError(err).Error("Failed to dial using usb0")
 		return nil, err
