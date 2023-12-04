@@ -25,38 +25,48 @@ const UXServerIP = "http://34.209.231.131:8080/register"
 
 type SimpleDialer struct{}
 
-// Dial dials out using the satellite's global unicast IPv6 address.
+// Dial creates a network connection using the specified network, address, and context.
+// It prefers IPv6 and falls back to IPv4 on the usb0 interface for outgoing connections.
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
-	logrus.Debug("Satellite SimpleDialer.Dial method started")
-	ipv6Addr, err := getIPv6Address()
-	if err != nil {
-		logrus.WithError(err).Error("Failed to get IPv6 address for outbound connections")
-		return nil, err
+	logrus.Debug("Entering SimpleDialer.Dial method")
+	var localAddr net.Addr
+	var err error
+
+	// Attempt to use the IPv6 address of usb0. If not available, fall back to IPv4.
+	ipv6Addr, ipv4Addr := getUSB0Addresses()
+	if ipv6Addr != nil {
+		localAddr = &net.TCPAddr{IP: ipv6Addr, Port: 0}
+		network = "tcp6"
+	} else if ipv4Addr != nil {
+		localAddr = &net.TCPAddr{IP: ipv4Addr, Port: 0}
+		network = "tcp4"
+	} else {
+		errMsg := "usb0 interface does not have a valid IPv6 or IPv4 address"
+		logrus.Error(errMsg)
+		return nil, fmt.Errorf(errMsg)
 	}
 
-	localAddr := &net.TCPAddr{IP: ipv6Addr, Port: 0} // Port 0 means any available port
 	dialer := &net.Dialer{
 		LocalAddr: localAddr,
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"localIPv6": ipv6Addr,
 		"network":   network,
 		"address":   address,
-	}).Info("Satellite is dialing out using IPv6")
+		"localAddr": localAddr,
+	}).Info("Dialing out using usb0")
 
 	conn, err := dialer.DialContext(ctx, network, address)
 	if err != nil {
-		logrus.WithError(err).Error("Failed to dial using IPv6 address")
+		logrus.WithError(err).Error("Failed to dial using usb0")
 		return nil, err
 	}
 
 	logrus.WithFields(logrus.Fields{
-		"localIPv6":  ipv6Addr,
-		"localPort":  conn.LocalAddr().(*net.TCPAddr).Port,
+		"localAddr":  conn.LocalAddr().String(),
 		"remoteAddr": conn.RemoteAddr().String(),
-	}).Info("Successfully dialed using IPv6")
-	logrus.Debug("Satellite SimpleDialer.Dial method finished")
+	}).Info("Successfully established connection using usb0")
+	logrus.Debug("Exiting SimpleDialer.Dial method")
 	return conn, nil
 }
 
@@ -92,19 +102,58 @@ func getZeroTierIP() (string, error) {
 	return "", errors.New("ZeroTier IP not found")
 }
 
+// getUSB0Addresses returns the IPv6 and IPv4 addresses of the usb0 interface.
+func getUSB0Addresses() (ipv6Addr, ipv4Addr net.IP) {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		logrus.WithError(err).Error("Failed to get network interfaces")
+		return nil, nil
+	}
+
+	for _, iface := range ifaces {
+		if iface.Name != "usb0" {
+			continue
+		}
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			logrus.WithError(err).WithField("interface", iface.Name).Error("Failed to get addresses for interface")
+			return nil, nil
+		}
+
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			ip := ipNet.IP
+			if ip.To4() != nil {
+				ipv4Addr = ip
+			} else if ip.To16() != nil && ip.IsGlobalUnicast() {
+				ipv6Addr = ip
+			}
+		}
+	}
+
+	return ipv6Addr, ipv4Addr
+}
+
 func Run() {
 	logrus.Debug("Satellite Run function started")
 	logrus.SetLevel(logrus.DebugLevel)
 	logrus.SetOutput(os.Stdout)
 	logrus.Info("Starting satellite main function")
 
-	socksServer, err := utils.SetupSocks5Server()
+	// Create a new SimpleDialer instance which will be used by the ConnectionManager
+	dialer := &SimpleDialer{}
+	// Create a new ConnectionManager instance providing the SimpleDialer
+	manager := proxy.NewConnectionManager(dialer)
+
+	// Setup the SOCKS5 server with the custom Dial function from our SimpleDialer
+	socksServer, err := utils.SetupSocks5Server(dialer)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{"context": "setting up SOCKS5 server"}).Fatal(err)
 	}
-
-	dialer := &SimpleDialer{}
-	manager := proxy.NewConnectionManager(dialer)
 
 	// Fetch ZeroTier IP instead of eth0 IP
 	zeroTierIPString, err := getZeroTierIP()

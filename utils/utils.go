@@ -31,10 +31,13 @@ func CheckIPType(ip string) string {
 	return "Unknown"
 }
 
-// SetupSocks5Server sets up a new SOCKS5 server.
+// SetupSocks5Server sets up a new SOCKS5 server with a custom Dial function.
 // It returns the SOCKS5 server or an error if there was an issue setting it up.
-func SetupSocks5Server() (*socks5.Server, error) {
-	conf := &socks5.Config{}
+func SetupSocks5Server(dialer proxy.Dialer) (*socks5.Server, error) {
+	conf := &socks5.Config{
+		// Set a custom Dial function that uses the Dial method of the provided Dialer.
+		Dial: dialer.Dial,
+	}
 	socksServer, err := socks5.New(conf)
 	if err != nil {
 		logrus.Error("Failed to create new SOCKS5 server: ", err)
