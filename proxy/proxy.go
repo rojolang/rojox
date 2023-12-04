@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/armon/go-socks5"
+	"github.com/rojolang/rojox/satellite"
 	"github.com/sirupsen/logrus"
 	"go.uber.org/zap"
 	"io"
@@ -321,4 +322,25 @@ func (m *ConnectionManager) GetLastRequestDuration() time.Duration {
 	// Return the last request duration.
 	// Ensure you update this field appropriately in your connection handling logic.
 	return m.lastRequestDuration
+}
+
+// SetupSocks5Server sets up a new SOCKS5 server with a custom Dial function.
+// It returns the SOCKS5 server or an error if there was an issue setting it up.
+func SetupSocks5Server() (*socks5.Server, error) {
+	// Create an instance of SimpleDialer from the proxy package that prefers IPv6.
+	dialer := &satellite.SimpleDialer{} // Use the proxy package qualifier
+
+	// Create a socks5.Config and pass the SimpleDialer to it.
+	conf := &socks5.Config{
+		Dial: dialer.Dial, // Use the Dial method of SimpleDialer as the custom dial function.
+	}
+
+	// Create the SOCKS5 server with the configuration that includes your custom dialer.
+	socksServer, err := socks5.New(conf)
+	if err != nil {
+		logrus.Error("Failed to create new SOCKS5 server: ", err)
+		return nil, err
+	}
+
+	return socksServer, nil
 }

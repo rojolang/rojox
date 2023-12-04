@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rojolang/rojox/utils"
 	"net"
 	"net/http"
 	"os"
@@ -19,7 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rojolang/rojox/proxy"
 	"github.com/rojolang/rojox/stats"
-	"github.com/rojolang/rojox/utils"
+
 	"go.uber.org/zap"
 )
 
@@ -112,7 +113,7 @@ func Run() {
 	dialer := &SimpleDialer{}
 	manager := proxy.NewConnectionManager(dialer)
 
-	socksServer, err := utils.SetupSocks5Server()
+	socksServer, err := proxy.SetupSocks5Server()
 	if err != nil {
 		logger.Fatal("Failed to set up SOCKS5 server", zap.Error(err))
 	}
