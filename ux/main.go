@@ -56,9 +56,8 @@ func startHTTPServer(listenAddress string, logger *zap.Logger) *http.Server {
 	if err != nil {
 		logger.Fatal("Failed to set up listener", zap.Error(err))
 	}
-	defer listener.Close()
 
-	// Handle incoming connections.
+	// Handle incoming connections in a goroutine.
 	go func() {
 		if err := httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Fatal("HTTP server failed", zap.Error(err))
