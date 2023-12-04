@@ -67,9 +67,6 @@ func (lb *LoadBalancer) RegisterSatellite(zeroTierIP string) {
 	lb.logger.Info("Registered new satellite", zap.String("zeroTierIP", zeroTierIP))
 }
 
-// performHealthChecks runs health checks on all satellites concurrently.
-// performHealthChecks runs health checks on all satellites concurrently.
-// performHealthChecks runs health checks on all satellites concurrently.
 func (lb *LoadBalancer) performHealthChecks() {
 	lb.mu.RLock()
 	satellites := make([]*SatelliteStatus, len(lb.satellites))
@@ -83,20 +80,8 @@ func (lb *LoadBalancer) performHealthChecks() {
 			defer wg.Done()
 			lb.logger.Info("Starting health check", zap.String("satellite", sat.IP))
 
-			// Attempt to establish a connection to the satellite's service port.
-			conn, err := net.DialTimeout("tcp", sat.IP+":9050", 5*time.Second)
-			if err != nil {
-				lb.mu.Lock()
-				sat.Healthy = false
-				lb.mu.Unlock()
-				lb.logger.Error("Health check failed: Unable to establish TCP connection",
-					zap.String("satellite", sat.IP), zap.Error(err))
-				return
-			}
-			conn.Close() // We close the connection immediately for this health check.
-
-			// Send a test request to an external service like `api.ipify.org`.
-			resp, err := http.Get("https://api.ipify.org")
+			// Send a GET request to the external service.
+			resp, err := http.Get("https://api64.ipify.org/")
 			if err != nil {
 				lb.mu.Lock()
 				sat.Healthy = false
@@ -110,12 +95,16 @@ func (lb *LoadBalancer) performHealthChecks() {
 			// Read the response body to log it.
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
+				lb.mu.Lock()
+				sat.Healthy = false
+				lb.mu.Unlock()
 				lb.logger.Error("Health check failed: Unable to read response body",
 					zap.String("satellite", sat.IP), zap.Error(err))
-			} else {
-				lb.logger.Info("Health check response from external service",
-					zap.String("satellite", sat.IP), zap.ByteString("response", body))
+				return
 			}
+
+			lb.logger.Info("Health check response from external service",
+				zap.String("satellite", sat.IP), zap.ByteString("response", body))
 
 			// Mark the satellite as healthy if we got a successful response.
 			if resp.StatusCode == http.StatusOK {
