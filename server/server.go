@@ -205,6 +205,7 @@ func (lb *LoadBalancer) HandleConnection(conn net.Conn) {
 
 // handleSingleConnection handles a single connection from the buffered channel.
 func (lb *LoadBalancer) handleSingleConnection(clientConn net.Conn) {
+	// Defer closing the client connection until this function exits.
 	defer clientConn.Close()
 
 	satellite, err := lb.NextSatellite()
@@ -219,28 +220,44 @@ func (lb *LoadBalancer) handleSingleConnection(clientConn net.Conn) {
 		lb.logger.Error("Failed to connect to satellite", zap.String("zeroTierIP", satellite.IP), zap.Error(err))
 		return
 	}
+
+	// Defer closing the satellite connection until this function exits.
 	defer satelliteConn.Close()
 
 	lb.mu.Lock()
 	satellite.ActiveConns++
 	lb.mu.Unlock()
 
+	// Decrement the active connections count when this function exits.
 	defer func() {
 		lb.mu.Lock()
 		satellite.ActiveConns--
 		lb.mu.Unlock()
 	}()
 
-	// Start the bidirectional copy between client and satellite.
-	go copyData(satelliteConn, clientConn, lb.logger)
-	go copyData(clientConn, satelliteConn, lb.logger)
+	// Use the wait group to wait for both copy operations to complete.
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// Start bidirectional copying.
+	go func() {
+		defer wg.Done()
+		copyData(satelliteConn, clientConn, lb.logger)
+	}()
+	go func() {
+		defer wg.Done()
+		copyData(clientConn, satelliteConn, lb.logger)
+	}()
+
+	// Wait for both copy operations to complete.
+	wg.Wait()
 }
 
-// copyData copies data between two connections.
+// copyData copies data between two connections and logs errors if they occur.
 func copyData(dst net.Conn, src net.Conn, logger *zap.Logger) {
 	_, err := io.Copy(dst, src)
 	if err != nil {
 		logger.Error("Failed to copy data between connections", zap.Error(err))
 	}
-	// Do not close the connections here. They should remain open to allow for a full duplex conversation.
+	// The connections will be closed by the caller of copyData.
 }
