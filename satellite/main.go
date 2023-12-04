@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -27,7 +26,7 @@ import (
 const UXServerIP = "http://34.209.231.131:8080/register"
 
 var (
-	readTimeout  = 5 * time.Second
+	readTimeout  = 10 * time.Second
 	writeTimeout = 10 * time.Second
 )
 
@@ -175,10 +174,14 @@ func (b *BufioResponseWriter) Flush() {
 // bufioHandler wraps an HTTP handler to provide buffered writing for responses.
 func bufioHandler(h http.Handler, logger *zap.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		bwResponseWriter := NewBufioResponseWriter(w, logger)
-		defer bwResponseWriter.Flush()
+		if r.URL.Path == "/metrics" { // Only buffer the Prometheus metrics endpoint
+			bwResponseWriter := NewBufioResponseWriter(w, logger)
+			defer bwResponseWriter.Flush() // Ensure we flush the buffer at the end of the request
 
-		h.ServeHTTP(bwResponseWriter, r)
+			h.ServeHTTP(bwResponseWriter, r)
+		} else {
+			h.ServeHTTP(w, r) // Serve normally for all other endpoints
+		}
 	})
 }
 
@@ -192,12 +195,12 @@ func handleTerminationSignals(httpServer *http.Server, listener net.Listener, lo
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := httpServer.Shutdown(ctx); err != nil {
-		logger.Error("Error shutting down HTTP server", zap.Error(err))
-	}
-
 	if err := listener.Close(); err != nil {
 		logger.Error("Error closing SOCKS5 server listener", zap.Error(err))
+	}
+
+	if err := httpServer.Shutdown(ctx); err != nil {
+		logger.Error("Error shutting down HTTP server", zap.Error(err))
 	}
 }
 
@@ -220,7 +223,7 @@ func registerWithUXServer(uxServerIP, zeroTierIP string, logger *zap.Logger) err
 		}
 		req.Header.Set("Content-Type", "application/json")
 
-		logger.Info("Sending registration request", zap.Any("request", req))
+		logger.Info("Sending registration request")
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -228,14 +231,7 @@ func registerWithUXServer(uxServerIP, zeroTierIP string, logger *zap.Logger) err
 			time.Sleep(1 * time.Second)
 			continue
 		}
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				logger.Error("Closing response body failed", zap.Error(err))
-			}
-		}(resp.Body)
-
-		logger.Info("Received registration response", zap.Any("response", resp))
+		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
 			err = fmt.Errorf("registration failed: status code %d", resp.StatusCode)
