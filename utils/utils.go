@@ -16,8 +16,8 @@ import (
 // SetupSocks5Server sets up a new SOCKS5 server with a custom Dial function.
 // It returns the SOCKS5 server or an error if there was an issue setting it up.
 func SetupSocks5Server() (*socks5.Server, error) {
-	// Create an instance of SimpleDialer that prefers IPv6.
-	dialer := &SimpleDialer{}
+	// Create an instance of SimpleDialer from the proxy package that prefers IPv6.
+	dialer := &proxy.SimpleDialer{} // Use the proxy package qualifier
 
 	// Create a socks5.Config and pass the SimpleDialer to it.
 	conf := &socks5.Config{
