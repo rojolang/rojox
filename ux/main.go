@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rojolang/rojox/server"
 	"go.uber.org/zap"
 	"net"
@@ -32,9 +33,10 @@ func Run(lb *server.LoadBalancer) {
 	// Set up the registration handler.
 	http.HandleFunc("/register", func(w http.ResponseWriter, r *http.Request) {
 		registerHandler(logger, w, r, lb) // Pass the LoadBalancer instance to the handler
+		// Increment Prometheus counter for registration requests here if needed
 	})
 
-	// Start the HTTP server on a separate port for registration.
+	// Start the HTTP server on a separate port for registration and metrics.
 	httpServer := startHTTPServer(":8080", logger)
 
 	// Start listening for SOCKS connections on port 9050.
@@ -50,6 +52,9 @@ func startHTTPServer(listenAddress string, logger *zap.Logger) *http.Server {
 		Addr:    listenAddress,
 		Handler: nil, // Default ServeMux.
 	}
+
+	// Set up the Prometheus metrics endpoint.
+	http.Handle("/metrics", promhttp.Handler())
 
 	// Listen for incoming connections.
 	listener, err := net.Listen("tcp", listenAddress)
