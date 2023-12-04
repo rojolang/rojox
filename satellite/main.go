@@ -27,6 +27,7 @@ type SimpleDialer struct{}
 
 // Dial creates a network connection using the specified network, address, and context.
 // It prefers IPv6 and falls back to IPv4 on the usb0 interface for outgoing connections.
+// Dial creates a network connection using the specified network, address, and context.
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
 	logrus.Debug("Entering SimpleDialer.Dial method")
 
