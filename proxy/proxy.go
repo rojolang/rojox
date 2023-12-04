@@ -25,18 +25,16 @@ type SimpleDialer struct{}
 
 // Dial creates a network connection using the specified network, address, and context.
 // It binds to the local address of the eth0 interface for outgoing connections.
-// Dial creates a network connection using the specified network, address, and context.
-// It binds to the local address of the eth0 interface for outgoing connections.
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
-	localAddr, err := getEth0IP()
+	localIP, err := getEth0IP()
 	if err != nil {
 		logrus.WithError(err).Error("Failed to get eth0 IP address")
 		return nil, err
 	}
 
-	dialer := net.Dialer{
+	localAddr := &net.TCPAddr{IP: localIP, Port: 0} // Port 0 means any available port
+	dialer := &net.Dialer{
 		LocalAddr: localAddr,
-		Timeout:   30 * time.Second,
 	}
 
 	logrus.WithFields(logrus.Fields{
@@ -45,11 +43,22 @@ func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.C
 		"localAddr": localAddr,
 	}).Info("Dialing with local address")
 
-	return dialer.DialContext(ctx, network, address)
+	conn, err := dialer.DialContext(ctx, network, address)
+	if err != nil {
+		logrus.WithError(err).Error("Failed to dial address")
+		return nil, err
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"network": network,
+		"address": address,
+	}).Info("Successfully dialed")
+
+	return conn, nil
 }
 
 // getEth0IP retrieves the first IPv4 address of the eth0 interface.
-func getEth0IP() (net.Addr, error) {
+func getEth0IP() (net.IP, error) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return nil, err
@@ -62,7 +71,7 @@ func getEth0IP() (net.Addr, error) {
 			}
 			for _, addr := range addrs {
 				if ipnet, ok := addr.(*net.IPNet); ok && ipnet.IP.To4() != nil {
-					return &net.TCPAddr{IP: ipnet.IP, Port: 0}, nil
+					return ipnet.IP, nil
 				}
 			}
 		}
