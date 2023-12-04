@@ -50,36 +50,39 @@ func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.C
 	var conn net.Conn
 	dialer := &net.Dialer{}
 
-	// Iterate over the IPs and select the first IPv6 address found.
-	foundIPv6 := false
+	// Log the IP addresses resolved for debugging purposes
 	for _, ip := range ips {
-		if ip.To4() == nil && ip.IsGlobalUnicast() {
-			foundIPv6 = true
-			dialAddr = net.JoinHostPort(ip.String(), port)
-			zap.L().Info("Attempting to dial IPv6 address", zap.String("address", dialAddr))
-			conn, err = dialer.DialContext(ctx, "tcp6", dialAddr)
-			if err == nil {
-				zap.L().Info("Successfully dialed IPv6 address", zap.String("address", dialAddr))
-				return conn, nil
+		if ip.To4() == nil {
+			zap.L().Info("Resolved IPv6 address", zap.String("address", ip.String()))
+			if ip.IsGlobalUnicast() {
+				// Use the IPv6 address if available.
+				dialAddr = net.JoinHostPort(ip.String(), port)
+				zap.L().Info("Attempting to dial IPv6 address", zap.String("address", dialAddr))
+				conn, err = dialer.DialContext(ctx, "tcp6", dialAddr)
+				if err == nil {
+					zap.L().Info("Successfully dialed IPv6 address", zap.String("address", dialAddr))
+					return conn, nil
+				}
+				zap.L().Error("Failed to dial IPv6", zap.Error(err), zap.String("address", dialAddr))
 			}
-			zap.L().Error("Failed to dial IPv6", zap.Error(err), zap.String("address", dialAddr))
+		} else {
+			zap.L().Info("Resolved IPv4 address", zap.String("address", ip.String()))
 		}
 	}
 
-	if !foundIPv6 {
-		zap.L().Info("No IPv6 address found, falling back to IPv4", zap.String("host", host))
-	}
-
 	// If no IPv6 addresses are available or all attempts fail, fall back to IPv4.
-	dialAddr = net.JoinHostPort(host, port)
-	zap.L().Info("Attempting to dial IPv4 address", zap.String("address", dialAddr))
-	conn, err = dialer.DialContext(ctx, "tcp4", dialAddr)
-	if err != nil {
-		zap.L().Error("Failed to dial IPv4", zap.Error(err), zap.String("address", dialAddr))
-		return nil, fmt.Errorf("failed to dial IPv4: %w", err)
+	if dialAddr == "" {
+		zap.L().Info("No IPv6 address found, falling back to IPv4", zap.String("host", host))
+		dialAddr = net.JoinHostPort(host, port)
+		zap.L().Info("Attempting to dial IPv4 address", zap.String("address", dialAddr))
+		conn, err = dialer.DialContext(ctx, "tcp4", dialAddr)
+		if err != nil {
+			zap.L().Error("Failed to dial IPv4", zap.Error(err), zap.String("address", dialAddr))
+			return nil, fmt.Errorf("failed to dial IPv4: %w", err)
+		}
+		zap.L().Info("Successfully dialed IPv4 address", zap.String("address", dialAddr))
 	}
 
-	zap.L().Info("Successfully dialed IPv4 address", zap.String("address", dialAddr))
 	return conn, nil
 }
 func getZeroTierIP(logger *zap.Logger) (string, error) {
