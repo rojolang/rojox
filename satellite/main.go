@@ -29,30 +29,22 @@ type SimpleDialer struct{}
 // It prefers IPv6 and falls back to IPv4 on the usb0 interface for outgoing connections.
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
 	logrus.Debug("Entering SimpleDialer.Dial method")
-	var conn net.Conn
-	var err error
 
-	// Attempt to dial using IPv6 first.
-	ipv6Addr, err := getUSB0IPv6()
-	if err == nil {
-		conn, err = dialWithLocalAddr(ctx, "tcp6", address, ipv6Addr)
-		if err == nil {
-			return conn, nil
-		}
-		logrus.WithError(err).Debug("Failed to dial using IPv6, falling back to IPv4")
-	}
+	// Create a dialer without specifying LocalAddr to use the system's default routing
+	dialer := &net.Dialer{}
 
-	// If IPv6 is not available or dialing failed, fall back to IPv4.
-	ipv4Addr, err := getUSB0IPv4()
+	// Dial out using the system's default routing
+	conn, err := dialer.DialContext(ctx, network, address)
 	if err != nil {
-		logrus.WithError(err).Error("Failed to get usb0 IPv4 address")
+		logrus.WithError(err).Error("Failed to dial")
 		return nil, err
 	}
-	conn, err = dialWithLocalAddr(ctx, "tcp4", address, ipv4Addr)
-	if err != nil {
-		logrus.WithError(err).Error("Failed to dial using IPv4")
-		return nil, err
-	}
+
+	logrus.WithFields(logrus.Fields{
+		"localAddr":  conn.LocalAddr().String(),
+		"remoteAddr": conn.RemoteAddr().String(),
+	}).Info("Successfully established connection")
+	logrus.Debug("Exiting SimpleDialer.Dial method")
 	return conn, nil
 }
 
@@ -142,7 +134,7 @@ func Run() {
 	manager := proxy.NewConnectionManager(dialer)
 
 	// Setup the SOCKS5 server with the custom Dial function from our SimpleDialer
-	socksServer, err := utils.SetupSocks5Server(dialer)
+	socksServer, err := utils.SetupSocks5Server()
 	if err != nil {
 		logrus.WithFields(logrus.Fields{"context": "setting up SOCKS5 server"}).Fatal(err)
 	}
