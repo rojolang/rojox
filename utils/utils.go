@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"github.com/armon/go-socks5"
@@ -35,15 +36,16 @@ func CheckIPType(ip string) string {
 // It returns the SOCKS5 server or an error if there was an issue setting it up.
 func SetupSocks5Server(dialer proxy.Dialer) (*socks5.Server, error) {
 	conf := &socks5.Config{
-		// Set a custom Dial function that uses the Dial method of the provided Dialer.
-		Dial: dialer.Dial,
+		Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return dialer.Dial(ctx, network, addr)
+		},
 	}
-	socksServer, err := socks5.New(conf)
+	server, err := socks5.New(conf)
 	if err != nil {
-		logrus.Error("Failed to create new SOCKS5 server: ", err)
+		logrus.Error("Failed to create SOCKS5 server:", err)
 		return nil, err
 	}
-	return socksServer, nil
+	return server, nil
 }
 
 // GetEth0IP gets the IP address for the eth0 network interface.

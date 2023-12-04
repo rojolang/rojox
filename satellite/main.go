@@ -29,47 +29,31 @@ type SimpleDialer struct{}
 // It prefers IPv6 and falls back to IPv4 on the usb0 interface for outgoing connections.
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
 	logrus.Debug("Entering SimpleDialer.Dial method")
-
-	// First, attempt to use IPv6 address of usb0
+	// Attempt to dial using IPv6 first.
 	ipv6Addr, err := getUSB0IPv6()
-	if err != nil {
-		logrus.WithError(err).Debug("Failed to get usb0 IPv6 address, falling back to IPv4")
-	} else {
+	if err == nil {
 		localAddr := &net.TCPAddr{IP: ipv6Addr, Port: 0}
-		dialer := &net.Dialer{
-			LocalAddr: localAddr,
-		}
+		dialer := &net.Dialer{LocalAddr: localAddr}
 		conn, err := dialer.DialContext(ctx, "tcp6", address)
 		if err == nil {
-			logrus.WithFields(logrus.Fields{
-				"localAddr":  conn.LocalAddr().String(),
-				"remoteAddr": conn.RemoteAddr().String(),
-			}).Info("Successfully established connection using usb0 IPv6")
 			return conn, nil
 		}
+		logrus.WithError(err).Debug("Failed to dial using IPv6, falling back to IPv4")
 	}
 
-	// If IPv6 is not available or dialing failed, fallback to IPv4 address of usb0
+	// If IPv6 is not available or dialing failed, fall back to IPv4.
 	ipv4Addr, err := getUSB0IPv4()
 	if err != nil {
 		logrus.WithError(err).Error("Failed to get usb0 IPv4 address")
 		return nil, err
 	}
 	localAddr := &net.TCPAddr{IP: ipv4Addr, Port: 0}
-	dialer := &net.Dialer{
-		LocalAddr: localAddr,
-	}
+	dialer := &net.Dialer{LocalAddr: localAddr}
 	conn, err := dialer.DialContext(ctx, "tcp4", address)
 	if err != nil {
-		logrus.WithError(err).Error("Failed to dial using usb0 IPv4")
+		logrus.WithError(err).Error("Failed to dial using IPv4")
 		return nil, err
 	}
-
-	logrus.WithFields(logrus.Fields{
-		"localAddr":  conn.LocalAddr().String(),
-		"remoteAddr": conn.RemoteAddr().String(),
-	}).Info("Successfully established connection using usb0 IPv4")
-	logrus.Debug("Exiting SimpleDialer.Dial method")
 	return conn, nil
 }
 
