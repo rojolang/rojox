@@ -1,13 +1,17 @@
 package ux
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/rojolang/rojox/server"
 	"go.uber.org/zap"
 	"net"
 	"net/http"
-
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -21,6 +25,7 @@ func (e *ErrorWithContext) Error() string {
 }
 
 // Run starts the UX server with the given LoadBalancer.
+// Run starts the UX server with the given LoadBalancer.
 func Run(lb *server.LoadBalancer) {
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
@@ -29,15 +34,29 @@ func Run(lb *server.LoadBalancer) {
 		registerHandler(logger, w, r, lb) // Pass the LoadBalancer instance to the handler
 	})
 
-	go startListener(logger, lb)
-
-	logger.Info("Starting HTTP server")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
-		logger.Fatal("starting HTTP server", zap.Error(&ErrorWithContext{
-			Context: "starting HTTP server",
-			Err:     err,
-		}))
+	listenAddress := "0.0.0.0:8080" // Replace with the specific IP if necessary.
+	logger.Info("Starting HTTP server on " + listenAddress)
+	httpServer := &http.Server{ // Renamed variable to httpServer
+		Addr:    listenAddress,
+		Handler: nil, // Default ServeMux.
 	}
+
+	// Listen for incoming connections.
+	listener, err := net.Listen("tcp", listenAddress)
+	if err != nil {
+		logger.Fatal("Failed to set up listener", zap.Error(err))
+	}
+	defer listener.Close()
+
+	// Handle incoming connections.
+	go func() {
+		if err := httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Fatal("HTTP server failed", zap.Error(err))
+		}
+	}()
+
+	// Call the handleTerminationSignals function to handle graceful shutdown.
+	handleTerminationSignals(httpServer, logger) // Corrected to pass httpServer
 }
 
 func startListener(logger *zap.Logger, lb *server.LoadBalancer) {
@@ -108,4 +127,18 @@ func parseRequest(logger *zap.Logger, r *http.Request) (string, error) {
 
 	logger.Info("Parsed IP from request", zap.String("ip", ip))
 	return ip, nil
+}
+func handleTerminationSignals(httpServer *http.Server, logger *zap.Logger) {
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+
+	<-quit
+	logger.Info("Received termination signal")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := httpServer.Shutdown(ctx); err != nil {
+		logger.Error("Error shutting down HTTP server", zap.Error(err))
+	}
 }

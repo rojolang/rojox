@@ -37,7 +37,7 @@ func NewLoadBalancer(bufferSize int, healthCheckInterval time.Duration) *LoadBal
 	}
 	lb.logger.Info("Creating new LoadBalancer")
 	go lb.handleConnections()
-	go lb.scheduleHealthChecks(healthCheckInterval)
+	go lb.ScheduleHealthChecks(healthCheckInterval)
 	return lb
 }
 
@@ -125,8 +125,8 @@ func (lb *LoadBalancer) performHealthChecks() {
 	wg.Wait()
 }
 
-// scheduleHealthChecks schedules health checks to run at regular intervals.
-func (lb *LoadBalancer) scheduleHealthChecks(interval time.Duration) {
+// ScheduleHealthChecks schedules health checks to run at regular intervals.
+func (lb *LoadBalancer) ScheduleHealthChecks(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -204,13 +204,9 @@ func (lb *LoadBalancer) HandleConnection(conn net.Conn) {
 }
 
 // handleSingleConnection handles a single connection from the buffered channel.
+// handleSingleConnection handles a single connection from the buffered channel.
 func (lb *LoadBalancer) handleSingleConnection(conn net.Conn) {
-	defer func(conn net.Conn) {
-		err := conn.Close()
-		if err != nil {
-			lb.logger.Error("Failed to close client connection", zap.Error(err))
-		}
-	}(conn)
+	defer conn.Close()
 
 	satellite, err := lb.NextSatellite()
 	if err != nil {
@@ -218,16 +214,13 @@ func (lb *LoadBalancer) handleSingleConnection(conn net.Conn) {
 		return
 	}
 
+	lb.logger.Info("Routing connection", zap.String("satelliteIP", satellite.IP))
 	satelliteConn, err := net.DialTimeout("tcp", satellite.IP+":9050", 5*time.Second)
 	if err != nil {
 		lb.logger.Error("Failed to connect to satellite", zap.String("zeroTierIP", satellite.IP), zap.Error(err))
 		return
 	}
-	defer func() {
-		if err := satelliteConn.Close(); err != nil {
-			lb.logger.Error("Failed to close satellite connection", zap.String("zeroTierIP", satellite.IP), zap.Error(err))
-		}
-	}()
+	defer satelliteConn.Close()
 
 	lb.mu.Lock()
 	satellite.ActiveConns++
@@ -239,8 +232,8 @@ func (lb *LoadBalancer) handleSingleConnection(conn net.Conn) {
 		lb.mu.Unlock()
 	}()
 
-	go copyData(conn, satelliteConn, lb.logger)
 	go copyData(satelliteConn, conn, lb.logger)
+	go copyData(conn, satelliteConn, lb.logger)
 }
 
 // copyData copies data between two connections and logs errors if they occur.
