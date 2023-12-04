@@ -89,6 +89,9 @@ type ConnectionManager struct {
 	startTime                  time.Time
 	conns                      map[string]net.Conn
 	connMutex                  sync.Mutex
+	bytesSent                  int64
+	bytesReceived              int64
+	lastRequestDuration        time.Duration // Field to store the duration of the last request
 }
 
 // NewConnectionManager creates a new ConnectionManager with the provided Dialer.
@@ -297,4 +300,38 @@ func (c *connWithReader) Read(b []byte) (n int, err error) {
 		}).Error("Failed to read data from connection")
 	}
 	return n, err
+}
+
+// UpdateBytesSent updates the total bytes sent counter.
+func (m *ConnectionManager) UpdateBytesSent(bytes int64) {
+	atomic.AddInt64(&m.bytesSent, bytes)
+}
+
+// UpdateBytesReceived updates the total bytes received counter.
+func (m *ConnectionManager) UpdateBytesReceived(bytes int64) {
+	atomic.AddInt64(&m.bytesReceived, bytes)
+}
+
+// GetTotalBytesSent returns the total bytes sent.
+func (m *ConnectionManager) GetTotalBytesSent() int64 {
+	return atomic.LoadInt64(&m.bytesSent)
+}
+
+// GetTotalBytesReceived returns the total bytes received.
+func (m *ConnectionManager) GetTotalBytesReceived() int64 {
+	return atomic.LoadInt64(&m.bytesReceived)
+}
+
+// GetCurrentConnections returns the current number of active connections.
+func (m *ConnectionManager) GetCurrentConnections() int {
+	m.connMutex.Lock()
+	defer m.connMutex.Unlock()
+	return len(m.conns)
+}
+
+// GetLastRequestDuration returns the duration of the last request.
+func (m *ConnectionManager) GetLastRequestDuration() time.Duration {
+	// Return the last request duration.
+	// Ensure you update this field appropriately in your connection handling logic.
+	return m.lastRequestDuration
 }

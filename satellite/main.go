@@ -116,7 +116,6 @@ func Run() {
 		logger.Fatal("Failed to get ZeroTier IP", zap.Error(err))
 	}
 
-	// Use the ZeroTier IP for registration
 	if err := registerWithUXServer(UXServerIP, zeroTierIPString, logger); err != nil {
 		logger.Fatal("Failed to register with UX server", zap.Error(err))
 	}
@@ -128,18 +127,25 @@ func Run() {
 
 	httpServer := &http.Server{
 		Addr:         ":8080",
-		Handler:      bufioHandler(promhttp.Handler(), logger),
+		Handler:      nil, // Use Default ServeMux which we will attach handlers to.
 		ReadTimeout:  readTimeout,
 		WriteTimeout: writeTimeout,
 	}
 
+	// Set up the Prometheus metrics endpoint.
+	http.Handle("/metrics", promhttp.Handler())
+
+	// Start the HTTP server in a goroutine so it doesn't block.
 	go func() {
-		if err := httpServer.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Fatal("HTTP server failed", zap.Error(err))
 		}
 	}()
 
+	// Start the stats printing routine using the ConnectionManager.
 	go stats.PrintStats(manager)
+
+	// Handle termination signals for graceful shutdown.
 	handleTerminationSignals(httpServer, listener, logger)
 }
 

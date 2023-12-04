@@ -47,62 +47,90 @@ var (
 		Name: "server_current_memory_usage",
 		Help: "The current memory usage",
 	})
+	activeConnections = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "satellite_active_connections",
+		Help: "Current number of active connections",
+	})
+
+	requestDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "satellite_request_duration_seconds",
+		Help:    "Histogram of request handling durations",
+		Buckets: prometheus.DefBuckets, // Use default buckets
+	})
+
+	bytesSent = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "satellite_bytes_sent_total",
+		Help: "Total number of bytes sent by the satellite",
+	})
+
+	bytesReceived = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "satellite_bytes_received_total",
+		Help: "Total number of bytes received by the satellite",
+	})
 )
 
-// PrintStats prints stats every 5 seconds
+// PrintStats prints stats every 5 seconds.
 func PrintStats(manager *proxy.ConnectionManager) {
 	logrus.Info("Starting PrintStats goroutine")
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		serverStats := logrus.Fields{}
+		// Update our metrics.
+		totalRequests.Add(float64(manager.GetTotalRequests()))
+		totalFailed.Add(float64(manager.GetTotalFailed()))
+		totalConnections.Add(float64(manager.GetTotalConnections()))
 
-		// Get and log server stats
-		go func() {
-			serverStats["public_ip"], _ = getAndLogStat("public IP", utils.GetPublicIP)
-			serverStats["ip_type"] = utils.CheckIPType(serverStats["public_ip"].(string))
-			serverStats["ipv6_ip"], _ = getAndLogStat("IPv6", utils.GetIPv6)
+		uptime.Set(float64(manager.GetUptime().Seconds()))
+		maxConcurrentConnections.Set(float64(manager.GetMaxConcurrentConnections()))
+		totalFailedConnections.Add(float64(manager.GetTotalFailedConnections()))
+		totalSuccessfulConnections.Add(float64(manager.GetTotalSuccessfulConnections()))
 
-			// Update our metrics
-			totalRequests.Add(float64(manager.GetTotalRequests()))
-			totalFailed.Add(float64(manager.GetTotalFailed()))
-			totalConnections.Add(float64(manager.GetTotalConnections()))
+		activeConnections.Set(float64(manager.GetCurrentConnections()))
+		bytesSent.Add(float64(manager.GetTotalBytesSent()))
+		bytesReceived.Add(float64(manager.GetTotalBytesReceived()))
+		requestDuration.Observe(manager.GetLastRequestDuration().Seconds())
 
-			uptime.Set(float64(manager.GetUptime().Seconds()))
-			maxConcurrentConnections.Set(float64(manager.GetMaxConcurrentConnections()))
-			totalFailedConnections.Add(float64(manager.GetTotalFailedConnections()))
-			totalSuccessfulConnections.Add(float64(manager.GetTotalSuccessfulConnections()))
+		// Fetch additional stats using utility functions from the utils package.
+		publicIP, err := utils.GetPublicIP()
+		if err != nil {
+			logrus.WithError(err).Error("Unable to fetch public IP")
+		}
+		ipv6, err := utils.GetIPv6()
+		if err != nil {
+			logrus.WithError(err).Error("Unable to fetch IPv6 address")
+		}
+		cpuUsage, err := utils.GetCurrentCPUUsage()
+		if err != nil {
+			logrus.WithError(err).Error("Unable to fetch current CPU usage")
+		}
+		memoryUsage, err := utils.GetCurrentMemoryUsage()
+		if err != nil {
+			logrus.WithError(err).Error("Unable to fetch current memory usage")
+		}
 
-			cpuUsage, _ := utils.GetCurrentCPUUsage()
-			currentCPUUsage.Set(cpuUsage)
+		// Update the Prometheus gauge metrics with the fetched values.
+		currentCPUUsage.Set(cpuUsage)
+		currentMemoryUsage.Set(memoryUsage)
 
-			memUsage, _ := utils.GetCurrentMemoryUsage()
-			currentMemoryUsage.Set(memUsage)
-
-			logrus.WithFields(serverStats).Info("Server stats")
-		}()
+		// Log the updated metrics.
+		logrus.WithFields(logrus.Fields{
+			"total_bytes_sent":             manager.GetTotalBytesSent(),
+			"total_bytes_received":         manager.GetTotalBytesReceived(),
+			"public_ip":                    publicIP,
+			"ip_type":                      utils.CheckIPType(publicIP),
+			"ipv6_ip":                      ipv6,
+			"total_requests":               manager.GetTotalRequests(),
+			"total_failed":                 manager.GetTotalFailed(),
+			"total_connections":            manager.GetTotalConnections(),
+			"uptime":                       manager.GetUptime().Seconds(),
+			"max_concurrent_connections":   manager.GetMaxConcurrentConnections(),
+			"total_failed_connections":     manager.GetTotalFailedConnections(),
+			"total_successful_connections": manager.GetTotalSuccessfulConnections(),
+			"current_cpu_usage":            cpuUsage,
+			"current_memory_usage":         memoryUsage,
+			"active_connections":           manager.GetCurrentConnections(),
+			"request_duration_seconds":     manager.GetLastRequestDuration().Seconds(),
+		}).Info("Server stats")
 	}
-}
-
-// getAndLogStat gets a server stat using the provided function
-func getAndLogStat(statName string, statFunc func() (string, error)) (string, error) {
-	stat, err := statFunc()
-	if err != nil {
-		logrus.WithField(statName, err).Error("Unable to fetch stat")
-		return "", err
-	}
-	logrus.WithField(statName, stat).Info("Fetched stat")
-	return stat, nil
-}
-
-// getAndLogStatFloat gets a server stat using the provided function
-func getAndLogStatFloat(statName string, statFunc func() (float64, error)) (float64, error) {
-	stat, err := statFunc()
-	if err != nil {
-		logrus.WithField(statName, err).Error("Unable to fetch stat")
-		return 0, err
-	}
-	logrus.WithField(statName, stat).Info("Fetched stat")
-	return stat, nil
 }
