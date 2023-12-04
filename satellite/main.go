@@ -30,28 +30,47 @@ type SimpleDialer struct{}
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
 	logrus.Debug("Entering SimpleDialer.Dial method")
 
-	// Create a dialer without specifying LocalAddr to use the system's default routing
-	dialer := &net.Dialer{}
-
-	// Dial out using the system's default routing
-	conn, err := dialer.DialContext(ctx, network, address)
+	// First, attempt to use IPv6 address of usb0
+	ipv6Addr, err := getUSB0IPv6()
 	if err != nil {
-		logrus.WithError(err).Error("Failed to dial")
+		logrus.WithError(err).Debug("Failed to get usb0 IPv6 address, falling back to IPv4")
+	} else {
+		localAddr := &net.TCPAddr{IP: ipv6Addr, Port: 0}
+		dialer := &net.Dialer{
+			LocalAddr: localAddr,
+		}
+		conn, err := dialer.DialContext(ctx, "tcp6", address)
+		if err == nil {
+			logrus.WithFields(logrus.Fields{
+				"localAddr":  conn.LocalAddr().String(),
+				"remoteAddr": conn.RemoteAddr().String(),
+			}).Info("Successfully established connection using usb0 IPv6")
+			return conn, nil
+		}
+	}
+
+	// If IPv6 is not available or dialing failed, fallback to IPv4 address of usb0
+	ipv4Addr, err := getUSB0IPv4()
+	if err != nil {
+		logrus.WithError(err).Error("Failed to get usb0 IPv4 address")
+		return nil, err
+	}
+	localAddr := &net.TCPAddr{IP: ipv4Addr, Port: 0}
+	dialer := &net.Dialer{
+		LocalAddr: localAddr,
+	}
+	conn, err := dialer.DialContext(ctx, "tcp4", address)
+	if err != nil {
+		logrus.WithError(err).Error("Failed to dial using usb0 IPv4")
 		return nil, err
 	}
 
 	logrus.WithFields(logrus.Fields{
 		"localAddr":  conn.LocalAddr().String(),
 		"remoteAddr": conn.RemoteAddr().String(),
-	}).Info("Successfully established connection")
+	}).Info("Successfully established connection using usb0 IPv4")
 	logrus.Debug("Exiting SimpleDialer.Dial method")
 	return conn, nil
-}
-
-func dialWithLocalAddr(ctx context.Context, network, address string, localIP net.IP) (net.Conn, error) {
-	localAddr := &net.TCPAddr{IP: localIP, Port: 0}
-	dialer := &net.Dialer{LocalAddr: localAddr}
-	return dialer.DialContext(ctx, network, address)
 }
 
 func getZeroTierIP() (string, error) {
