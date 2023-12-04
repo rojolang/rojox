@@ -48,6 +48,12 @@ func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.C
 	return conn, nil
 }
 
+func dialWithLocalAddr(ctx context.Context, network, address string, localIP net.IP) (net.Conn, error) {
+	localAddr := &net.TCPAddr{IP: localIP, Port: 0}
+	dialer := &net.Dialer{LocalAddr: localAddr}
+	return dialer.DialContext(ctx, network, address)
+}
+
 func getZeroTierIP() (string, error) {
 	logrus.Debug("Satellite getZeroTierIP function started")
 	cmd := exec.Command("zerotier-cli", "listnetworks")
