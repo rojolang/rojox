@@ -25,12 +25,28 @@ const UXServerIP = "http://34.209.231.131:8080/register"
 
 type SimpleDialer struct{}
 
+// Dial dials out using the satellite's global unicast IPv6 address.
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
-	logrus.WithFields(logrus.Fields{"network": network, "address": address}).Info("Dialing...")
-	// Ensure we are using IPv6 by replacing the network argument with "tcp6"
-	return net.Dial("tcp6", address)
-}
+	ipv6Addr, err := getIPv6Address()
+	if err != nil {
+		logrus.WithError(err).Error("Failed to get IPv6 address")
+		return nil, err
+	}
 
+	localAddr := &net.TCPAddr{IP: ipv6Addr}
+	dialer := net.Dialer{
+		LocalAddr: localAddr,
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"network":   network,
+		"address":   address,
+		"localAddr": localAddr,
+	}).Info("Dialing out using IPv6")
+
+	// Use the DialContext method to make the outbound connection using the IPv6 address.
+	return dialer.DialContext(ctx, network, address)
+}
 func getZeroTierIP() (string, error) {
 	cmd := exec.Command("zerotier-cli", "listnetworks")
 	var stdout, stderr bytes.Buffer
@@ -197,4 +213,36 @@ func registerWithUXServer(uxServerIP string) error {
 	}
 
 	return fmt.Errorf("registration failed after 3 attempts")
+}
+
+// getIPv6Address retrieves the preferred global unicast IPv6 address of the system.
+func getIPv6Address() (net.IP, error) {
+	// Fetch all network interfaces.
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil, err
+	}
+
+	// Iterate over all interfaces to find a global unicast IPv6 address.
+	for _, iface := range ifaces {
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue // If we can't get addresses for an interface, skip it.
+		}
+
+		// Check all addresses for a global unicast IPv6 address.
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			ip := ipNet.IP
+			if ip.To4() == nil && ip.IsGlobalUnicast() {
+				// Found a global unicast IPv6 address.
+				return ip, nil
+			}
+		}
+	}
+
+	return nil, errors.New("no global unicast IPv6 address found")
 }

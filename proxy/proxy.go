@@ -58,61 +58,54 @@ func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.C
 
 // getEth0IP retrieves the preferred IPv6 address of the eth0 interface.
 // getEth0IP retrieves the preferred IPv6 address of the eth0 interface.
+// getEth0IP retrieves the IPv6 address of the eth0 interface.
 func getEth0IP() (net.IP, error) {
-	logrus.Info("Retrieving IP addresses for eth0 network interface")
-	var eth0IPv6 net.IP
-
-	iface, err := net.InterfaceByName("eth0")
+	ifaces, err := net.Interfaces()
 	if err != nil {
-		logrus.WithError(err).Error("Failed to get eth0 network interface")
+		logrus.WithError(err).Error("Failed to get network interfaces")
 		return nil, err
 	}
 
-	addrs, err := iface.Addrs()
-	if err != nil {
-		logrus.WithError(err).Error("Failed to get addresses for eth0 interface")
-		return nil, err
+	for _, iface := range ifaces {
+		if iface.Name == "eth0" {
+			addrs, err := iface.Addrs()
+			if err != nil {
+				logrus.WithError(err).WithField("interface", iface.Name).Error("Failed to get addresses for interface")
+				return nil, err
+			}
+
+			for _, addr := range addrs {
+				var ip net.IP
+				switch v := addr.(type) {
+				case *net.IPNet:
+					ip = v.IP
+				case *net.IPAddr:
+					ip = v.IP
+				}
+
+				if ip == nil {
+					continue
+				}
+
+				// Log all addresses for eth0
+				logrus.WithFields(logrus.Fields{
+					"interface": iface.Name,
+					"address":   ip.String(),
+				}).Info("Address found for interface")
+
+				// Check for global unicast IPv6 address
+				if ip.To4() == nil && ip.IsGlobalUnicast() {
+					logrus.WithFields(logrus.Fields{
+						"interface": "eth0",
+						"ipv6":      ip.String(),
+					}).Info("IPv6 address found for eth0")
+					return ip, nil
+				}
+			}
+		}
 	}
 
-	for _, addr := range addrs {
-		var ip net.IP
-		switch v := addr.(type) {
-		case *net.IPNet:
-			ip = v.IP
-		case *net.IPAddr:
-			ip = v.IP
-		}
-
-		if ip == nil {
-			continue
-		}
-
-		ipType := "IPv6"
-		if ip.To4() != nil {
-			ipType = "IPv4"
-		}
-
-		logrus.WithFields(logrus.Fields{
-			"interface": "eth0",
-			"address":   ip.String(),
-			"type":      ipType,
-		}).Info("Found IP address for eth0 interface")
-
-		// Prefer global unicast IPv6 address.
-		if ipType == "IPv6" && ip.IsGlobalUnicast() {
-			eth0IPv6 = ip
-		}
-	}
-
-	if eth0IPv6 != nil {
-		logrus.WithFields(logrus.Fields{
-			"interface": "eth0",
-			"ipv6":      eth0IPv6.String(),
-		}).Info("Found preferred IPv6 address for eth0")
-		return eth0IPv6, nil
-	}
-
-	return nil, fmt.Errorf("eth0 interface has no preferred IPv6 address")
+	return nil, fmt.Errorf("eth0 interface not found or has no global unicast IPv6 address")
 }
 
 // ConnectionManager manages and monitors network connections.
