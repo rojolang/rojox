@@ -25,6 +25,8 @@ type SimpleDialer struct{}
 
 // Dial creates a network connection using the specified network, address, and context.
 // It binds to the local address of the eth0 interface for outgoing connections.
+// Dial creates a network connection using the specified network, address, and context.
+// It binds to the local address of the eth0 interface for outgoing connections.
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
 	localIP, err := getEth0IP()
 	if err != nil {
