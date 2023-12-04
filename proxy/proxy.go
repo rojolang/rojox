@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/armon/go-socks5"
 	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 	"io"
 	"net"
 	"sync"
@@ -21,58 +22,44 @@ type Dialer interface {
 // SimpleDialer implements the Dialer interface, providing methods to dial network connections.
 type SimpleDialer struct{}
 
-// Dial creates a network connection using the specified network, address, and context.
-// It prefers IPv6 and falls back to IPv4 for outgoing connections.
 func (d *SimpleDialer) Dial(ctx context.Context, network, address string) (net.Conn, error) {
-	logrus.Debug("Entering SimpleDialer.Dial method")
-
-	// Try to resolve the address to see if it has an IPv6 address.
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
-		logrus.WithError(err).Error("Failed to split network address")
-		return nil, err
+		return nil, fmt.Errorf("failed to split network address: %w", err)
 	}
 
 	ips, err := net.LookupIP(host)
 	if err != nil {
-		logrus.WithError(err).Error("Failed to look up IP for host")
-		return nil, err
-	}
-
-	var ipv6Addr net.IP
-	for _, ip := range ips {
-		if ip.To4() == nil && ip.IsGlobalUnicast() {
-			ipv6Addr = ip
-			break
-		}
+		return nil, fmt.Errorf("failed to look up IP for host: %w", err)
 	}
 
 	var dialAddr string
-	if ipv6Addr != nil {
-		// Use the IPv6 address if available.
-		dialAddr = net.JoinHostPort(ipv6Addr.String(), port)
-		network = "tcp6"
-	} else {
-		// Fall back to the original address, which could be IPv4.
-		dialAddr = address
-		network = "tcp4"
-	}
-
-	// Create a dialer without specifying LocalAddr to use the system's default routing
+	var conn net.Conn
 	dialer := &net.Dialer{}
 
-	// Dial out using the system's default routing
-	conn, err := dialer.DialContext(ctx, network, dialAddr)
-	if err != nil {
-		logrus.WithError(err).Error("Failed to dial")
-		return nil, err
+	// Iterate over the IPs and select the first IPv6 address found.
+	for _, ip := range ips {
+		if ip.To4() == nil && ip.IsGlobalUnicast() {
+			// Use the IPv6 address if available.
+			dialAddr = net.JoinHostPort(ip.String(), port)
+			conn, err = dialer.DialContext(ctx, "tcp6", dialAddr)
+			if err == nil {
+				return conn, nil
+			}
+			// Log the error and try the next IP if IPv6 connection fails.
+			zap.L().Error("failed to dial IPv6", zap.Error(err), zap.String("address", dialAddr))
+		}
 	}
 
-	logrus.WithFields(logrus.Fields{
-		"localAddr":  conn.LocalAddr().String(),
-		"remoteAddr": conn.RemoteAddr().String(),
-	}).Info("Successfully established connection")
-	logrus.Debug("Exiting SimpleDialer.Dial method")
+	// If no IPv6 addresses are available or all attempts fail, fall back to IPv4.
+	if dialAddr == "" {
+		dialAddr = net.JoinHostPort(host, port)
+		conn, err = dialer.DialContext(ctx, "tcp4", dialAddr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to dial IPv4: %w", err)
+		}
+	}
+
 	return conn, nil
 }
 

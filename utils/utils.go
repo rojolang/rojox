@@ -16,12 +16,21 @@ import (
 // SetupSocks5Server sets up a new SOCKS5 server with a custom Dial function.
 // It returns the SOCKS5 server or an error if there was an issue setting it up.
 func SetupSocks5Server() (*socks5.Server, error) {
-	conf := &socks5.Config{} // No custom Dial function needed
+	// Create an instance of SimpleDialer that prefers IPv6.
+	dialer := &SimpleDialer{}
+
+	// Create a socks5.Config and pass the SimpleDialer to it.
+	conf := &socks5.Config{
+		Dial: dialer.Dial, // Use the Dial method of SimpleDialer as the custom dial function.
+	}
+
+	// Create the SOCKS5 server with the configuration that includes your custom dialer.
 	socksServer, err := socks5.New(conf)
 	if err != nil {
 		logrus.Error("Failed to create new SOCKS5 server: ", err)
 		return nil, err
 	}
+
 	return socksServer, nil
 }
 
